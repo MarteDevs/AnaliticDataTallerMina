@@ -675,17 +675,20 @@ def generate_consolidated_pdf_report(df_period, year, month, selected_minas, out
     fill = False
     for mina in selected_minas:
         df_mina = filter_by_mina(df_period, mina)
-        if df_mina.empty:
-            continue
+        
+        n_trans = 0
+        t_sin = 0.0
+        t_con = 0.0
+        
+        if not df_mina.empty:
+            n_trans = len(df_mina)
+            t_sin = df_mina['Total'].sum()
+            t_con = df_mina['TOTAL  IGV'].sum()
             
-        n_trans = len(df_mina)
-        t_sin = df_mina['Total'].sum()
-        t_con = df_mina['TOTAL  IGV'].sum()
-        
-        total_consolidado_trans += n_trans
-        total_consolidado_sin_igv += t_sin
-        total_consolidado_con_igv += t_con
-        
+            total_consolidado_trans += n_trans
+            total_consolidado_sin_igv += t_sin
+            total_consolidado_con_igv += t_con
+            
         if fill:
             pdf.set_fill_color(248, 249, 250)
         else:

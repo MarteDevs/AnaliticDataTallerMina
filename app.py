@@ -327,22 +327,29 @@ def get_consolidated_summary():
         for mina in minas:
             df_mina = filter_by_mina(df_period, mina)
             if df_mina.empty:
-                continue
+                summary_rows.append({
+                    "mina": mina,
+                    "transacciones": 0,
+                    "total_sin_igv": 0.0,
+                    "total_con_igv": 0.0,
+                    "sin_datos": True
+                })
+            else:
+                n_trans = len(df_mina)
+                t_sin = float(df_mina['Total'].sum())
+                t_con = float(df_mina['TOTAL  IGV'].sum())
                 
-            n_trans = len(df_mina)
-            t_sin = float(df_mina['Total'].sum())
-            t_con = float(df_mina['TOTAL  IGV'].sum())
-            
-            total_trans += n_trans
-            total_sin_igv += t_sin
-            total_con_igv += t_con
-            
-            summary_rows.append({
-                "mina": mina,
-                "transacciones": n_trans,
-                "total_sin_igv": t_sin,
-                "total_con_igv": t_con
-            })
+                total_trans += n_trans
+                total_sin_igv += t_sin
+                total_con_igv += t_con
+                
+                summary_rows.append({
+                    "mina": mina,
+                    "transacciones": n_trans,
+                    "total_sin_igv": t_sin,
+                    "total_con_igv": t_con,
+                    "sin_datos": False
+                })
             
         return jsonify({
             "rows": summary_rows,

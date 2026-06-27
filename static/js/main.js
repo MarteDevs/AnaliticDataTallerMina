@@ -473,12 +473,22 @@ async function updateConsolidatedSummary() {
         
         data.rows.forEach(row => {
             const tr = document.createElement('tr');
-            tr.innerHTML = `
-                <td><strong>${row.mina}</strong></td>
-                <td class="text-center">${row.transacciones.toLocaleString('es-PE')}</td>
-                <td class="text-right">S/ ${row.total_sin_igv.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                <td class="text-right">S/ ${row.total_con_igv.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-            `;
+            if (row.sin_datos) {
+                tr.style.opacity = '0.55';
+                tr.innerHTML = `
+                    <td><strong>${row.mina}</strong> <span class="badge" style="background-color: rgba(255,255,255,0.05); color: var(--text-muted); font-size: 0.72rem; padding: 2px 6px; margin-left: 8px; border: 1px solid rgba(255,255,255,0.08); border-radius: 4px;"><i class="fa-solid fa-ban"></i> Sin movimientos</span></td>
+                    <td class="text-center" style="color: var(--text-muted);">0</td>
+                    <td class="text-right" style="color: var(--text-muted);">S/ 0.00</td>
+                    <td class="text-right" style="color: var(--text-muted);">S/ 0.00</td>
+                `;
+            } else {
+                tr.innerHTML = `
+                    <td><strong>${row.mina}</strong></td>
+                    <td class="text-center">${row.transacciones.toLocaleString('es-PE')}</td>
+                    <td class="text-right">S/ ${row.total_sin_igv.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td class="text-right">S/ ${row.total_con_igv.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                `;
+            }
             consolidatedTableTbody.appendChild(tr);
         });
         
