@@ -334,14 +334,19 @@ def generate_excel_report(df_mina, year, month, mina_name, output_dir, chart_pat
     for col_idx in range(1, 7):
         worksheet.write(current_row, col_idx, "", total_cell_blank)
         
-    # CANT no tiene total general en la captura (o sí? En la captura estaba en blanco)
-    # Pongamos la suma de cantidad en la columna H (CANT) por completitud, pero con formato numérico
-    worksheet.write_formula(current_row, 7, f"=SUM(H{start_row+1}:H{current_row})", total_label_format)
+    # Calcular valores sumados en Python para escribirlos como pre-calculados (evita mostrar 0 en Vista Protegida de Excel)
+    val_cant = float(df_mina['Cantidad'].sum())
+    val_precio = float(df_mina['Precio'].sum())
+    val_total = float(df_mina['Total'].sum())
+    val_total_igv = float(df_mina['TOTAL  IGV'].sum())
+
+    # CANT
+    worksheet.write_formula(current_row, 7, f"=SUM(H{start_row+1}:H{current_row})", total_label_format, val_cant)
     
     # PRECIO., TOTAL., TOTALES + IGV tienen sumas en la captura
-    worksheet.write_formula(current_row, 8, f"=SUM(I{start_row+1}:I{current_row})", total_currency_format)
-    worksheet.write_formula(current_row, 9, f"=SUM(J{start_row+1}:J{current_row})", total_currency_format)
-    worksheet.write_formula(current_row, 10, f"=SUM(K{start_row+1}:K{current_row})", total_currency_format)
+    worksheet.write_formula(current_row, 8, f"=SUM(I{start_row+1}:I{current_row})", total_currency_format, val_precio)
+    worksheet.write_formula(current_row, 9, f"=SUM(J{start_row+1}:J{current_row})", total_currency_format, val_total)
+    worksheet.write_formula(current_row, 10, f"=SUM(K{start_row+1}:K{current_row})", total_currency_format, val_total_igv)
     
     # Ajustar el ancho de las columnas dinámicamente
     for col_idx, header in enumerate(headers):
@@ -561,7 +566,7 @@ def generate_pdf_report(df_mina, year, month, mina_name, output_dir, chart_path=
         cant = row.get('Cantidad', 0)
         precio = row.get('Precio', 0.0)
         total = row.get('Total', 0.0)
-        total_igv = row.get('TOTAL  IGV', 0.0)
+        row_total_igv = row.get('TOTAL  IGV', 0.0)
         
         # Color de fondo alterno
         if fill:
@@ -582,7 +587,7 @@ def generate_pdf_report(df_mina, year, month, mina_name, output_dir, chart_path=
         pdf.cell(col_widths[4], 5.5, f"{cant:,.0f}", 1, 0, 'C', fill=True)
         pdf.cell(col_widths[5], 5.5, f"S/ {precio:,.2f}", 1, 0, 'R', fill=True)
         pdf.cell(col_widths[6], 5.5, f"S/ {total:,.2f}", 1, 0, 'R', fill=True)
-        pdf.cell(col_widths[7], 5.5, f"S/ {total_igv:,.2f}", 1, 0, 'R', fill=True)
+        pdf.cell(col_widths[7], 5.5, f"S/ {row_total_igv:,.2f}", 1, 0, 'R', fill=True)
         pdf.ln()
         
         fill = not fill
