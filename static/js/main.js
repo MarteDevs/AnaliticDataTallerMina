@@ -52,6 +52,7 @@ const consolidatedMinasPlaceholder = document.getElementById('consolidated-minas
 const minasCheckboxGrid = document.getElementById('minas-checkbox-grid');
 const btnSelectAllMinas = document.getElementById('btn-select-all-minas');
 const btnDeselectAllMinas = document.getElementById('btn-deselect-all-minas');
+const minaSearch = document.getElementById('mina-search');
 
 const consolidatedTablePlaceholder = document.getElementById('consolidated-table-placeholder');
 const consolidatedTableContainer = document.getElementById('consolidated-table-container');
@@ -198,6 +199,7 @@ function resetConsolidatedView() {
     consolidatedMinasPlaceholder.style.display = "flex";
     minasCheckboxGrid.style.display = "none";
     minasCheckboxGrid.innerHTML = "";
+    minaSearch.value = "";
     
     consolidatedTablePlaceholder.style.display = "flex";
     consolidatedTableContainer.style.display = "none";
@@ -360,6 +362,7 @@ function renderMinasCheckboxes() {
     consolidatedMinasPlaceholder.style.display = "none";
     minasCheckboxGrid.innerHTML = "";
     minasCheckboxGrid.style.display = "grid";
+    minaSearch.value = "";
     
     window.allMinas.forEach(mina => {
         const div = document.createElement('div');
@@ -400,24 +403,45 @@ function renderMinasCheckboxes() {
 
 // Acciones grupales de selección de minas
 function setupConsolidatedActions() {
+    // Seleccionar solo las visibles en pantalla
     btnSelectAllMinas.addEventListener('click', () => {
         const items = minasCheckboxGrid.querySelectorAll('.mina-checkbox-item');
         items.forEach(item => {
-            const chk = item.querySelector('input[type="checkbox"]');
-            chk.checked = true;
-            item.classList.add('checked');
+            if (item.style.display !== 'none') {
+                const chk = item.querySelector('input[type="checkbox"]');
+                chk.checked = true;
+                item.classList.add('checked');
+            }
         });
         updateConsolidatedSummary();
     });
     
+    // Desmarcar solo las visibles en pantalla
     btnDeselectAllMinas.addEventListener('click', () => {
         const items = minasCheckboxGrid.querySelectorAll('.mina-checkbox-item');
         items.forEach(item => {
-            const chk = item.querySelector('input[type="checkbox"]');
-            chk.checked = false;
-            item.classList.remove('checked');
+            if (item.style.display !== 'none') {
+                const chk = item.querySelector('input[type="checkbox"]');
+                chk.checked = false;
+                item.classList.remove('checked');
+            }
         });
         updateConsolidatedSummary();
+    });
+    
+    // Buscador interactivo de minas
+    minaSearch.addEventListener('input', () => {
+        const query = minaSearch.value.toLowerCase().trim();
+        const items = minasCheckboxGrid.querySelectorAll('.mina-checkbox-item');
+        
+        items.forEach(item => {
+            const minaName = item.dataset.mina.toLowerCase();
+            if (!query || minaName.includes(query)) {
+                item.style.display = 'flex';
+            } else {
+                item.style.display = 'none';
+            }
+        });
     });
 }
 
