@@ -175,6 +175,11 @@ body {
     transition: all var(--transition-speed) ease;
 }
 
+.form-control option {
+    background-color: var(--bg-sidebar);
+    color: var(--text-main);
+}
+
 .form-control:focus {
     outline: none;
     border-color: var(--color-primary);
