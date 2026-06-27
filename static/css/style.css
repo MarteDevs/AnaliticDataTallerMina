@@ -635,3 +635,165 @@ body {
         grid-template-columns: 1fr;
     }
 }
+
+/* --- ESTILOS DE VISTA CONSOLIDADA Y PESTAÑAS (TALLER MINA) --- */
+
+/* Contenedor de alineación a la derecha en la cabecera */
+.header-right-wrapper {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+}
+
+/* Contenedor de pestañas */
+.view-tabs {
+    display: flex;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 30px;
+    padding: 3px;
+    gap: 2px;
+}
+
+.tab-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-muted);
+    padding: 0.6rem 1.2rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    font-family: var(--font-family);
+    border-radius: 25px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    transition: all var(--transition-speed) ease;
+}
+
+.tab-btn:hover {
+    color: var(--text-main);
+}
+
+.tab-btn.active {
+    background-color: var(--color-primary);
+    color: #fff;
+    box-shadow: 0 4px 15px rgba(59, 130, 246, 0.3);
+}
+
+/* Secciones de vista */
+.view-section {
+    display: none;
+    flex-direction: column;
+    gap: 2rem;
+    animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.view-section.active {
+    display: flex;
+}
+
+/* Panel del Selector de Minas */
+.panel-mina-selector {
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.selector-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.btn-sm {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.8rem;
+    border-radius: 6px;
+}
+
+/* Cuadrícula de checkboxes de minas */
+.minas-checkbox-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 1rem;
+    padding: 0.5rem 0;
+}
+
+.mina-checkbox-item {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 10px;
+    padding: 0.8rem 1rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    user-select: none;
+}
+
+.mina-checkbox-item:hover {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: rgba(255, 255, 255, 0.12);
+    transform: translateY(-2px);
+}
+
+.mina-checkbox-item.checked {
+    background: rgba(59, 130, 246, 0.08);
+    border-color: rgba(59, 130, 246, 0.3);
+}
+
+.mina-checkbox-item input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 18px;
+    height: 18px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-radius: 4px;
+    outline: none;
+    cursor: pointer;
+    position: relative;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: transparent;
+}
+
+.mina-checkbox-item input[type="checkbox"]:checked {
+    background-color: var(--color-primary);
+    border-color: var(--color-primary);
+}
+
+.mina-checkbox-item input[type="checkbox"]:checked::after {
+    content: "\f00c";
+    font-family: "Font Awesome 6 Free";
+    font-weight: 900;
+    font-size: 10px;
+    color: white;
+}
+
+.mina-checkbox-item span {
+    font-size: 0.88rem;
+    font-weight: 500;
+    color: var(--text-main);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.mina-checkbox-item.checked span {
+    color: #fff;
+    font-weight: 600;
+}
+
+/* Estilos de tabla en tfoot y fila de total */
+.data-table tfoot .total-row {
+    background-color: rgba(59, 130, 246, 0.08);
+    border-top: 2px solid rgba(59, 130, 246, 0.3);
+}
+
+.data-table tfoot .total-row td {
+    font-weight: 700;
+    color: var(--color-primary);
+    border-bottom: none;
+}
+

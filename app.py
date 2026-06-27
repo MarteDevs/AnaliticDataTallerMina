@@ -7,7 +7,7 @@ from werkzeug.utils import secure_filename
 
 from src.loader import load_data
 from src.filter import get_unique_periods, filter_taller_mina, get_unique_minas, filter_by_mina
-from src.report import clean_filename, MONTHS_ES
+from src.report import clean_filename, MONTHS_ES, generate_chart, generate_excel_report, generate_pdf_report, generate_consolidated_pdf_report
 from main import run_generation_pipeline
 
 app = Flask(__name__)
@@ -34,7 +34,7 @@ def get_current_df():
 
 def get_file_paths(year, month, mina):
     """
-    Retorna las rutas en disco para el Excel, PDF y Gráfico pre-generados.
+    Retorna las rutas en disco para el Excel, PDF y Gráfico pre-generados o bajo demanda.
     """
     month_name = MONTHS_ES.get(month, f"Mes_{month:02d}")
     period_dir_name = f"{year}_{month:02d}_{month_name}"
@@ -63,7 +63,6 @@ def upload_file():
     file = request.files['file']
     if file.filename == '':
         CURRENT_FILE_PATH = DEFAULT_FILE_PATH
-        # Pre-generar de forma síncrona al subir archivo
         run_generation_pipeline(CURRENT_FILE_PATH, OUTPUT_DIR)
         return jsonify({"message": "Usando archivo por defecto", "filename": "FEBRERO 2026  INFORME.xlsx"})
         
@@ -175,36 +174,18 @@ def analyze():
             with open(chart_path, "rb") as image_file:
                 chart_base64 = base64.b64encode(image_file.read()).decode('utf-8')
         else:
-            # Fallback en caliente por si el gráfico no se pre-generó
-            print(f"Advertencia: Gráfico no encontrado en {chart_path}. Generando en memoria...")
-            import matplotlib
-            matplotlib.use('Agg')
-            import matplotlib.pyplot as plt
-            import seaborn as sns
-            
-            df_grouped = df_mina.groupby('DescProducto')['TOTAL  IGV'].sum().reset_index()
-            df_grouped = df_grouped.sort_values(by='TOTAL  IGV', ascending=False).head(10)
-            
-            sns.set_theme(style="whitegrid")
-            fig, ax = plt.subplots(figsize=(9, 4.5))
-            colors = sns.color_palette("Blues_r", len(df_grouped))
-            bars = sns.barplot(x='TOTAL  IGV', y='DescProducto', data=df_grouped, palette=colors, ax=ax, hue='DescProducto', legend=False)
-            
-            ax.set_title(f"Top Productos por Gasto (TOTAL + IGV)\n{mina} - {MONTHS_ES[month]} {year}", fontsize=11, fontweight='bold', color='#1F4E78')
-            ax.set_xlabel("Monto Acumulado (S/)", fontsize=9, fontweight='bold', color='#4F5B66')
-            ax.set_ylabel("", fontsize=9)
-            
-            for bar in bars.patches:
-                width = bar.get_width()
-                if width > 0:
-                    ax.text(width + (df_grouped['TOTAL  IGV'].max() * 0.01), bar.get_y() + bar.get_height()/2, f"S/ {width:,.2f}", va='center', ha='left', fontsize=8, fontweight='bold', color='#1F4E78')
-            plt.tight_layout()
-            buf = io.BytesIO()
-            plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
-            buf.seek(0)
-            chart_base64 = base64.b64encode(buf.read()).decode('utf-8')
-            plt.close()
-        
+            # Generar en disco (auto-guardado) para que esté listo para los reportes
+            print(f"Gráfico no encontrado en {chart_path}. Generando y guardando bajo demanda...")
+            try:
+                os.makedirs(os.path.dirname(chart_path), exist_ok=True)
+                # Llamada al graficador
+                generate_chart(df_mina, year, month, mina, os.path.dirname(chart_path))
+                if os.path.exists(chart_path):
+                    with open(chart_path, "rb") as image_file:
+                        chart_base64 = base64.b64encode(image_file.read()).decode('utf-8')
+            except Exception as e:
+                print(f"Error generando gráfico bajo demanda: {e}")
+                
         # 5. Formatear transacciones para tabla
         df_sorted = df_mina.sort_values(by='FechaMovimiento')
         records = []
@@ -246,8 +227,30 @@ def download_excel():
     month = int(data.get('month'))
     mina = data.get('mina')
     
-    excel_path, _, _ = get_file_paths(year, month, mina)
+    excel_path, _, chart_path = get_file_paths(year, month, mina)
     
+    if not os.path.exists(excel_path):
+        print(f"Reporte Excel no encontrado en {excel_path}. Generando en caliente...")
+        try:
+            df = get_current_df()
+            df_period = filter_taller_mina(df, year, month)
+            df_mina = filter_by_mina(df_period, mina)
+            
+            if df_mina.empty:
+                return jsonify({"error": "No hay datos para esta mina y período."}), 404
+                
+            # Generar gráfico si no existe
+            if not os.path.exists(chart_path):
+                os.makedirs(os.path.dirname(chart_path), exist_ok=True)
+                generate_chart(df_mina, year, month, mina, os.path.dirname(chart_path))
+                
+            # Generar Excel
+            os.makedirs(os.path.dirname(excel_path), exist_ok=True)
+            generate_excel_report(df_mina, year, month, mina, os.path.dirname(excel_path), chart_path)
+        except Exception as e:
+            print(f"Error generando Excel bajo demanda: {e}")
+            return jsonify({"error": f"Error al generar Excel: {str(e)}"}), 500
+            
     if os.path.exists(excel_path):
         return send_file(
             excel_path,
@@ -256,7 +259,7 @@ def download_excel():
             mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
     else:
-        return jsonify({"error": "El reporte Excel pre-generado no existe para esta mina y período."}), 404
+        return jsonify({"error": "El reporte Excel no existe y no pudo ser generado."}), 404
 
 @app.route('/api/download/pdf', methods=['POST'])
 def download_pdf():
@@ -265,8 +268,30 @@ def download_pdf():
     month = int(data.get('month'))
     mina = data.get('mina')
     
-    _, pdf_path, _ = get_file_paths(year, month, mina)
+    _, pdf_path, chart_path = get_file_paths(year, month, mina)
     
+    if not os.path.exists(pdf_path):
+        print(f"Reporte PDF no encontrado en {pdf_path}. Generando en caliente...")
+        try:
+            df = get_current_df()
+            df_period = filter_taller_mina(df, year, month)
+            df_mina = filter_by_mina(df_period, mina)
+            
+            if df_mina.empty:
+                return jsonify({"error": "No hay datos para esta mina y período."}), 404
+                
+            # Generar gráfico si no existe
+            if not os.path.exists(chart_path):
+                os.makedirs(os.path.dirname(chart_path), exist_ok=True)
+                generate_chart(df_mina, year, month, mina, os.path.dirname(chart_path))
+                
+            # Generar PDF
+            os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
+            generate_pdf_report(df_mina, year, month, mina, os.path.dirname(pdf_path), chart_path)
+        except Exception as e:
+            print(f"Error generando PDF bajo demanda: {e}")
+            return jsonify({"error": f"Error al generar PDF: {str(e)}"}), 500
+            
     if os.path.exists(pdf_path):
         return send_file(
             pdf_path,
@@ -275,7 +300,101 @@ def download_pdf():
             mimetype="application/pdf"
         )
     else:
-        return jsonify({"error": "El reporte PDF pre-generado no existe para esta mina y período."}), 404
+        return jsonify({"error": "El reporte PDF no existe y no pudo ser generado."}), 404
+
+@app.route('/api/consolidated/summary', methods=['POST'])
+def get_consolidated_summary():
+    data = request.json
+    year = int(data.get('year'))
+    month = int(data.get('month'))
+    minas = data.get('minas', [])
+    
+    if not minas:
+        return jsonify({"error": "No se seleccionó ninguna mina."}), 400
+        
+    try:
+        df = get_current_df()
+        df_period = filter_taller_mina(df, year, month)
+        
+        if df_period.empty:
+            return jsonify({"error": f"No hay movimientos registrados en {MONTHS_ES.get(month)} del {year}"}), 404
+            
+        summary_rows = []
+        total_trans = 0
+        total_sin_igv = 0.0
+        total_con_igv = 0.0
+        
+        for mina in minas:
+            df_mina = filter_by_mina(df_period, mina)
+            if df_mina.empty:
+                continue
+                
+            n_trans = len(df_mina)
+            t_sin = float(df_mina['Total'].sum())
+            t_con = float(df_mina['TOTAL  IGV'].sum())
+            
+            total_trans += n_trans
+            total_sin_igv += t_sin
+            total_con_igv += t_con
+            
+            summary_rows.append({
+                "mina": mina,
+                "transacciones": n_trans,
+                "total_sin_igv": t_sin,
+                "total_con_igv": t_con
+            })
+            
+        return jsonify({
+            "rows": summary_rows,
+            "totals": {
+                "transacciones": total_trans,
+                "total_sin_igv": total_sin_igv,
+                "total_con_igv": total_con_igv
+            }
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": f"Error al calcular resumen consolidado: {str(e)}"}), 500
+
+@app.route('/api/download/consolidated-pdf', methods=['POST'])
+def download_consolidated_pdf():
+    data = request.json
+    year = int(data.get('year'))
+    month = int(data.get('month'))
+    minas = data.get('minas', [])
+    
+    if not minas:
+        return jsonify({"error": "No se seleccionó ninguna mina."}), 400
+        
+    try:
+        df = get_current_df()
+        df_period = filter_taller_mina(df, year, month)
+        
+        if df_period.empty:
+            return jsonify({"error": f"No hay datos registrados en {MONTHS_ES.get(month)} del {year}"}), 404
+            
+        # Determinar directorio del período
+        month_name = MONTHS_ES.get(month, f"Mes_{month:02d}")
+        period_dir_name = f"{year}_{month:02d}_{month_name}"
+        consolidated_dir = os.path.join(OUTPUT_DIR, str(year), period_dir_name)
+        
+        # Generar reporte PDF consolidado
+        pdf_path = generate_consolidated_pdf_report(df_period, year, month, minas, consolidated_dir)
+        
+        if os.path.exists(pdf_path):
+            return send_file(
+                pdf_path,
+                as_attachment=True,
+                download_name=os.path.basename(pdf_path),
+                mimetype="application/pdf"
+            )
+        else:
+            return jsonify({"error": "No se pudo generar el reporte PDF consolidado."}), 500
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": f"Error al generar reporte consolidado: {str(e)}"}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)

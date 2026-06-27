@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import xlsxwriter
 from fpdf import FPDF
+from src.filter import filter_by_mina
 
 MONTHS_ES = {
     1: "ENERO", 2: "FEBRERO", 3: "MARZO", 4: "ABRIL", 5: "MAYO", 6: "JUNIO",
@@ -624,4 +625,291 @@ def generate_pdf_report(df_mina, year, month, mina_name, output_dir, chart_path=
     pdf.output(filepath)
     print(f"Reporte PDF generado exitosamente: {filepath}")
     return filepath
+
+def generate_consolidated_pdf_report(df_period, year, month, selected_minas, output_dir):
+    """
+    Genera un único archivo PDF que consolida el reporte de múltiples minas seleccionadas,
+    comenzando con una portada de resumen ejecutivo grupal.
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    filename = f"Reporte_Consolidado_{year}_{month:02d}.pdf"
+    filepath = os.path.join(output_dir, filename)
+    
+    title_text = f"REPORTE CONSOLIDADO DE CONSUMOS - TALLER MINA"
+    subtitle_text = f"ANALISIS GRUPAL DE MINAS SELECCIONADAS"
+    
+    pdf = PDF(title_text, subtitle_text, year, month)
+    pdf.set_margins(15, 15, 15)
+    
+    # 1. PORTADA CON RESUMEN EJECUTIVO
+    pdf.add_page()
+    
+    pdf.set_y(40)
+    pdf.set_font('helvetica', 'B', 14)
+    pdf.set_text_color(31, 78, 120)
+    pdf.cell(0, 8, safe_text("RESUMEN EJECUTIVO CONSOLIDADO"), 0, 1, 'C')
+    pdf.ln(5)
+    
+    portada_headers = ["Mina / Area de Destino", "Nro Transacciones", "Total (Sin IGV)", "Total + IGV"]
+    portada_widths = [127, 40, 50, 50] # Total 267mm
+    
+    # Cabeceras
+    pdf.set_font('helvetica', 'B', 10)
+    pdf.set_fill_color(31, 78, 120)
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_draw_color(220, 220, 220)
+    
+    for i, header in enumerate(portada_headers):
+        align = 'L' if i == 0 else ('C' if i == 1 else 'R')
+        pdf.cell(portada_widths[i], 8.5, safe_text(header), 1, 0, align, fill=True)
+    pdf.ln()
+    
+    # Filas de datos
+    pdf.set_font('helvetica', '', 9.5)
+    pdf.set_text_color(33, 33, 33)
+    
+    total_consolidado_trans = 0
+    total_consolidado_sin_igv = 0.0
+    total_consolidado_con_igv = 0.0
+    
+    fill = False
+    for mina in selected_minas:
+        df_mina = filter_by_mina(df_period, mina)
+        if df_mina.empty:
+            continue
+            
+        n_trans = len(df_mina)
+        t_sin = df_mina['Total'].sum()
+        t_con = df_mina['TOTAL  IGV'].sum()
+        
+        total_consolidado_trans += n_trans
+        total_consolidado_sin_igv += t_sin
+        total_consolidado_con_igv += t_con
+        
+        if fill:
+            pdf.set_fill_color(248, 249, 250)
+        else:
+            pdf.set_fill_color(255, 255, 255)
+            
+        pdf.cell(portada_widths[0], 8, safe_text(mina), 1, 0, 'L', fill=True)
+        pdf.cell(portada_widths[1], 8, f"{n_trans:,.0f}", 1, 0, 'C', fill=True)
+        pdf.cell(portada_widths[2], 8, f"S/ {t_sin:,.2f}", 1, 0, 'R', fill=True)
+        pdf.cell(portada_widths[3], 8, f"S/ {t_con:,.2f}", 1, 0, 'R', fill=True)
+        pdf.ln()
+        
+        fill = not fill
+        
+    # Fila de Total Consolidado
+    pdf.set_font('helvetica', 'B', 10)
+    pdf.set_fill_color(221, 235, 247) # Celeste claro #DDEBF7
+    pdf.set_text_color(31, 78, 120)
+    
+    pdf.cell(portada_widths[0], 8.5, safe_text("Total General Consolidado"), 1, 0, 'L', fill=True)
+    pdf.cell(portada_widths[1], 8.5, f"{total_consolidado_trans:,.0f}", 1, 0, 'C', fill=True)
+    pdf.cell(portada_widths[2], 8.5, f"S/ {total_consolidado_sin_igv:,.2f}", 1, 0, 'R', fill=True)
+    pdf.cell(portada_widths[3], 8.5, f"S/ {total_consolidado_con_igv:,.2f}", 1, 0, 'R', fill=True)
+    pdf.ln()
+    
+    # 2. DETALLES POR MINA
+    for mina in selected_minas:
+        df_mina = filter_by_mina(df_period, mina)
+        if df_mina.empty:
+            continue
+            
+        # Obtener ruta de gráfico (generarlo si no existe)
+        month_name = MONTHS_ES.get(month, f"Mes_{month:02d}")
+        period_dir_name = f"{year}_{month:02d}_{month_name}"
+        charts_dir = os.path.join(output_dir, str(year), period_dir_name, "graficos")
+        os.makedirs(charts_dir, exist_ok=True)
+        
+        clean_mina_name = clean_filename(mina)
+        chart_filename = f"chart_{clean_mina_name}_{year}_{month:02d}.png"
+        chart_path = os.path.join(charts_dir, chart_filename)
+        
+        if not os.path.exists(chart_path):
+            try:
+                generate_chart(df_mina, year, month, mina, charts_dir)
+            except Exception as e:
+                print(f"Error generando grafico para reporte consolidado ({mina}): {e}")
+                chart_path = None
+                
+        # Agregar Página
+        pdf.add_page()
+        
+        # Escribir contenido individual
+        pdf.set_y(30)
+        start_y = pdf.get_y()
+        
+        # Cuadro de filtros
+        pdf.set_fill_color(245, 247, 250)
+        pdf.rect(15, start_y, 90, 43, 'F')
+        pdf.set_draw_color(200, 200, 200)
+        pdf.rect(15, start_y, 90, 43, 'D')
+        
+        pdf.set_y(start_y + 3)
+        pdf.set_x(18)
+        pdf.set_font('helvetica', 'B', 10)
+        pdf.set_text_color(31, 78, 120)
+        pdf.cell(0, 5, safe_text("PARAMETROS DEL INFORME"), 0, 1)
+        pdf.ln(1)
+        
+        pdf.set_font('helvetica', '', 9)
+        pdf.set_text_color(60, 60, 60)
+        
+        filters = [
+            ("Area de Origen:", "Taller Mina"),
+            ("Comprobante:", "POOT"),
+            ("Mina Destino:", f"{mina}"),
+            ("Periodo:", f"{MONTHS_ES[month]} {year}")
+        ]
+        
+        for label, val in filters:
+            pdf.set_x(18)
+            pdf.set_font('helvetica', 'B', 9)
+            pdf.cell(32, 5, safe_text(label), 0, 0)
+            pdf.set_font('helvetica', '', 9)
+            if len(val) > 23:
+                val = val[:20] + "..."
+            pdf.cell(0, 5, safe_text(val), 0, 1)
+            
+        # Totales acumulados rápidos
+        total_cant_mina = df_mina['Cantidad'].sum()
+        total_monto_mina = df_mina['Total'].sum()
+        total_igv_mina = df_mina['TOTAL  IGV'].sum()
+        
+        pdf.set_fill_color(230, 240, 250)
+        pdf.rect(15, start_y + 46, 90, 25, 'F')
+        pdf.rect(15, start_y + 46, 90, 25, 'D')
+        
+        pdf.set_y(start_y + 48)
+        pdf.set_x(18)
+        pdf.set_font('helvetica', 'B', 9)
+        pdf.set_text_color(31, 78, 120)
+        pdf.cell(35, 5, safe_text("Total Cantidad:"), 0, 0)
+        pdf.set_font('helvetica', '', 9)
+        pdf.set_text_color(33, 33, 33)
+        pdf.cell(0, 5, f"{total_cant_mina:,.0f} UND", 0, 1)
+        
+        pdf.set_x(18)
+        pdf.set_font('helvetica', 'B', 9)
+        pdf.set_text_color(31, 78, 120)
+        pdf.cell(35, 5, safe_text("Total (Sin IGV):"), 0, 0)
+        pdf.set_font('helvetica', '', 9)
+        pdf.set_text_color(33, 33, 33)
+        pdf.cell(0, 5, f"S/ {total_monto_mina:,.2f}", 0, 1)
+        
+        pdf.set_x(18)
+        pdf.set_font('helvetica', 'B', 9)
+        pdf.set_text_color(31, 78, 120)
+        pdf.cell(35, 5, safe_text("Total (Con IGV):"), 0, 0)
+        pdf.set_font('helvetica', '', 9)
+        pdf.set_text_color(33, 33, 33)
+        pdf.cell(0, 5, f"S/ {total_igv_mina:,.2f}", 0, 1)
+        
+        # Insertar el gráfico
+        if chart_path and os.path.exists(chart_path):
+            pdf.image(chart_path, x=120, y=start_y, w=162, h=71)
+            pdf.set_y(start_y + 75)
+        else:
+            pdf.set_y(start_y + 75)
+            
+        pdf.ln(3)
+        
+        # Tabla detallada
+        pdf.set_font('helvetica', 'B', 11)
+        pdf.set_text_color(31, 78, 120)
+        pdf.cell(0, 6, safe_text(f"DETALLE DE MOVIMIENTOS Y CONSUMOS - {mina.upper()}"), 0, 1)
+        pdf.ln(1)
+        
+        headers = ["Fecha", "POOT", "Descripcion del Producto", "Unidad", "Cant", "Precio", "Total", "Total + IGV"]
+        col_widths = [22, 22, 98, 17, 15, 31, 31, 31]
+        
+        pdf.set_font('helvetica', 'B', 8.5)
+        pdf.set_fill_color(31, 78, 120)
+        pdf.set_text_color(255, 255, 255)
+        pdf.set_draw_color(220, 220, 220)
+        
+        for i, header in enumerate(headers):
+            align = 'C' if i in [0, 1, 3, 4] else ('R' if i >= 5 else 'L')
+            pdf.cell(col_widths[i], 6, safe_text(header), 1, 0, align, fill=True)
+        pdf.ln()
+        
+        pdf.set_font('helvetica', '', 7.5)
+        pdf.set_text_color(33, 33, 33)
+        
+        df_sorted_mina = df_mina.sort_values(by='FechaMovimiento')
+        
+        fill_row = False
+        for idx, row in df_sorted_mina.iterrows():
+            if pdf.get_y() > 175:
+                pdf.add_page()
+                pdf.set_font('helvetica', 'B', 8.5)
+                pdf.set_fill_color(31, 78, 120)
+                pdf.set_text_color(255, 255, 255)
+                for i, header in enumerate(headers):
+                    align = 'C' if i in [0, 1, 3, 4] else ('R' if i >= 5 else 'L')
+                    pdf.cell(col_widths[i], 6, safe_text(header), 1, 0, align, fill=True)
+                pdf.ln()
+                pdf.set_font('helvetica', '', 7.5)
+                pdf.set_text_color(33, 33, 33)
+                
+            f_date = row.get('FechaMovimiento')
+            date_str = f_date.strftime('%d/%m/%Y') if pd.notna(f_date) else ""
+            poot = str(row.get('Numero', ''))
+            desc_prod = str(row.get('DescProducto', ''))
+            med = str(row.get('Unidad', ''))
+            cant = row.get('Cantidad', 0)
+            precio = row.get('Precio', 0.0)
+            total = row.get('Total', 0.0)
+            row_total_igv = row.get('TOTAL  IGV', 0.0)
+            
+            if fill_row:
+                pdf.set_fill_color(248, 249, 250)
+            else:
+                pdf.set_fill_color(255, 255, 255)
+                
+            pdf.cell(col_widths[0], 5.5, safe_text(date_str), 1, 0, 'C', fill=True)
+            pdf.cell(col_widths[1], 5.5, safe_text(poot), 1, 0, 'C', fill=True)
+            
+            if len(desc_prod) > 52:
+                desc_prod = desc_prod[:49] + "..."
+            pdf.cell(col_widths[2], 5.5, safe_text(desc_prod), 1, 0, 'L', fill=True)
+            
+            pdf.cell(col_widths[3], 5.5, safe_text(med), 1, 0, 'C', fill=True)
+            pdf.cell(col_widths[4], 5.5, f"{cant:,.0f}", 1, 0, 'C', fill=True)
+            pdf.cell(col_widths[5], 5.5, f"S/ {precio:,.2f}", 1, 0, 'R', fill=True)
+            pdf.cell(col_widths[6], 5.5, f"S/ {total:,.2f}", 1, 0, 'R', fill=True)
+            pdf.cell(col_widths[7], 5.5, f"S/ {row_total_igv:,.2f}", 1, 0, 'R', fill=True)
+            pdf.ln()
+            
+            fill_row = not fill_row
+            
+        # Fila de Total general por mina
+        if pdf.get_y() > 180:
+            pdf.add_page()
+            pdf.set_font('helvetica', 'B', 8.5)
+            pdf.set_fill_color(31, 78, 120)
+            pdf.set_text_color(255, 255, 255)
+            for i, header in enumerate(headers):
+                align = 'C' if i in [0, 1, 3, 4] else ('R' if i >= 5 else 'L')
+                pdf.cell(col_widths[i], 6, safe_text(header), 1, 0, align, fill=True)
+            pdf.ln()
+            
+        pdf.set_font('helvetica', 'B', 8)
+        pdf.set_fill_color(221, 235, 247)
+        pdf.set_text_color(31, 78, 120)
+        
+        pdf.cell(159, 6, safe_text("Total general"), 1, 0, 'L', fill=True)
+        pdf.cell(col_widths[4], 6, f"{total_cant_mina:,.0f}", 1, 0, 'C', fill=True)
+        
+        total_precio_mina = df_mina['Precio'].sum()
+        pdf.cell(col_widths[5], 6, f"S/ {total_precio_mina:,.2f}", 1, 0, 'R', fill=True)
+        pdf.cell(col_widths[6], 6, f"S/ {total_monto_mina:,.2f}", 1, 0, 'R', fill=True)
+        pdf.cell(col_widths[7], 6, f"S/ {total_igv_mina:,.2f}", 1, 0, 'R', fill=True)
+        pdf.ln()
+        
+    pdf.output(filepath)
+    print(f"Reporte Consolidado PDF generado exitosamente: {filepath}")
+    return filepath
+
 

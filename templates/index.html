@@ -40,9 +40,9 @@
                 </button>
             </div>
             
-            <!-- Filtros -->
+            <!-- Filtros globales de Período -->
             <div class="sidebar-section">
-                <h3><i class="fa-solid fa-sliders"></i> Filtros de Reporte</h3>
+                <h3><i class="fa-solid fa-sliders"></i> Filtros de Período</h3>
                 
                 <div class="form-group">
                     <label for="select-year"><i class="fa-regular fa-calendar"></i> Año</label>
@@ -58,7 +58,8 @@
                     </select>
                 </div>
                 
-                <div class="form-group">
+                <!-- Este selector de mina solo aplica y se muestra en la vista Individual -->
+                <div class="form-group" id="sidebar-mina-group">
                     <label for="select-mina"><i class="fa-solid fa-helmet-safety"></i> Mina Destino</label>
                     <select id="select-mina" class="form-control" disabled>
                         <option value="">Selecciona mina</option>
@@ -66,14 +67,21 @@
                 </div>
             </div>
             
-            <!-- Descargas -->
-            <div class="sidebar-section download-section">
+            <!-- Descargas de la barra lateral -->
+            <div class="sidebar-section download-section" id="sidebar-download-individual">
                 <h3><i class="fa-solid fa-download"></i> Exportar Reportes</h3>
                 <button class="btn btn-excel btn-full" id="btn-download-excel" disabled>
                     <i class="fa-solid fa-file-excel"></i> Descargar Excel Premium
                 </button>
                 <button class="btn btn-pdf btn-full" id="btn-download-pdf" disabled>
                     <i class="fa-solid fa-file-pdf"></i> Descargar PDF Estilizado
+                </button>
+            </div>
+            
+            <div class="sidebar-section download-section" id="sidebar-download-consolidated" style="display: none;">
+                <h3><i class="fa-solid fa-download"></i> Exportar Consolidado</h3>
+                <button class="btn btn-pdf btn-full" id="btn-download-consolidated" disabled>
+                    <i class="fa-solid fa-file-pdf"></i> Descargar PDF Consolidado
                 </button>
             </div>
         </aside>
@@ -87,146 +95,222 @@
                     <h1>Consumo y Costos de Equipos y Minas</h1>
                     <p>Visualización interactiva, filtrado y generación de reportes automáticos para el área Taller Mina.</p>
                 </div>
-                <div class="header-meta">
-                    <div class="meta-item">
-                        <i class="fa-regular fa-clock"></i>
-                        <span id="current-date-indicator">Actualizado</span>
+                <div class="header-right-wrapper">
+                    <!-- Pestañas de Navegación Premium -->
+                    <div class="view-tabs">
+                        <button class="tab-btn active" id="tab-btn-individual">
+                            <i class="fa-solid fa-square-poll-vertical"></i> Dashboard Individual
+                        </button>
+                        <button class="tab-btn" id="tab-btn-consolidated">
+                            <i class="fa-solid fa-cubes"></i> Reporte Consolidado
+                        </button>
+                    </div>
+                    <div class="header-meta">
+                        <div class="meta-item">
+                            <i class="fa-regular fa-clock"></i>
+                            <span id="current-date-indicator">Actualizado</span>
+                        </div>
                     </div>
                 </div>
             </header>
             
-            <!-- Dashboard KPIs -->
-            <section class="dashboard-kpis">
-                <!-- KPI 1: Total con IGV -->
-                <div class="kpi-card glass">
-                    <div class="kpi-icon-wrapper igv-bg">
-                        <i class="fa-solid fa-money-bill-wave"></i>
-                    </div>
-                    <div class="kpi-details">
-                        <span class="kpi-title">Total con IGV</span>
-                        <h3 class="kpi-value" id="kpi-total-igv">S/ 0.00</h3>
-                        <span class="kpi-subtitle">Costo Total Acumulado</span>
-                    </div>
-                </div>
-                
-                <!-- KPI 2: Total sin IGV -->
-                <div class="kpi-card glass">
-                    <div class="kpi-icon-wrapper cost-bg">
-                        <i class="fa-solid fa-calculator"></i>
-                    </div>
-                    <div class="kpi-details">
-                        <span class="kpi-title">Total sin IGV</span>
-                        <h3 class="kpi-value" id="kpi-total-sin-igv">S/ 0.00</h3>
-                        <span class="kpi-subtitle">Valor Venta Neto</span>
-                    </div>
-                </div>
-                
-                <!-- KPI 3: Cantidad Total -->
-                <div class="kpi-card glass">
-                    <div class="kpi-icon-wrapper cant-bg">
-                        <i class="fa-solid fa-boxes-stacked"></i>
-                    </div>
-                    <div class="kpi-details">
-                        <span class="kpi-title">Cantidad Unidades</span>
-                        <h3 class="kpi-value" id="kpi-total-cant">0</h3>
-                        <span class="kpi-subtitle">Productos Consumidos</span>
-                    </div>
-                </div>
-                
-                <!-- KPI 4: Transacciones -->
-                <div class="kpi-card glass">
-                    <div class="kpi-icon-wrapper trans-bg">
-                        <i class="fa-solid fa-list-check"></i>
-                    </div>
-                    <div class="kpi-details">
-                        <span class="kpi-title">Transacciones</span>
-                        <h3 class="kpi-value" id="kpi-transacciones">0</h3>
-                        <span class="kpi-subtitle">Movimientos Registrados</span>
-                    </div>
-                </div>
-            </section>
-            
-            <!-- Dashboard Visualizations & Data -->
-            <div class="dashboard-grid">
-                
-                <!-- Chart Panel -->
-                <section class="panel glass panel-chart">
-                    <div class="panel-header">
-                        <h2><i class="fa-solid fa-chart-bar"></i> Distribución de Gasto por Producto</h2>
-                        <div class="panel-actions">
-                            <span class="badge" id="chart-badge">Taller Mina</span>
+            <!-- VISTA 1: DASHBOARD INDIVIDUAL -->
+            <div id="view-individual-section" class="view-section">
+                <!-- Dashboard KPIs -->
+                <section class="dashboard-kpis">
+                    <div class="kpi-card glass">
+                        <div class="kpi-icon-wrapper igv-bg">
+                            <i class="fa-solid fa-money-bill-wave"></i>
+                        </div>
+                        <div class="kpi-details">
+                            <span class="kpi-title">Total con IGV</span>
+                            <h3 class="kpi-value" id="kpi-total-igv">S/ 0.00</h3>
+                            <span class="kpi-subtitle">Costo Total Acumulado</span>
                         </div>
                     </div>
-                    <div class="panel-body chart-body">
-                        <div id="chart-placeholder" class="placeholder-msg">
-                            <i class="fa-solid fa-chart-pie placeholder-icon"></i>
-                            <p>Selecciona un Año, Mes y Mina en el panel izquierdo para visualizar el gráfico estadístico.</p>
+                    
+                    <div class="kpi-card glass">
+                        <div class="kpi-icon-wrapper cost-bg">
+                            <i class="fa-solid fa-calculator"></i>
                         </div>
-                        <img id="chart-img" class="chart-image" src="" alt="Gráfico de consumos" style="display: none;">
+                        <div class="kpi-details">
+                            <span class="kpi-title">Total sin IGV</span>
+                            <h3 class="kpi-value" id="kpi-total-sin-igv">S/ 0.00</h3>
+                            <span class="kpi-subtitle">Valor Venta Neto</span>
+                        </div>
+                    </div>
+                    
+                    <div class="kpi-card glass">
+                        <div class="kpi-icon-wrapper cant-bg">
+                            <i class="fa-solid fa-boxes-stacked"></i>
+                        </div>
+                        <div class="kpi-details">
+                            <span class="kpi-title">Cantidad Unidades</span>
+                            <h3 class="kpi-value" id="kpi-total-cant">0</h3>
+                            <span class="kpi-subtitle">Productos Consumidos</span>
+                        </div>
+                    </div>
+                    
+                    <div class="kpi-card glass">
+                        <div class="kpi-icon-wrapper trans-bg">
+                            <i class="fa-solid fa-list-check"></i>
+                        </div>
+                        <div class="kpi-details">
+                            <span class="kpi-title">Transacciones</span>
+                            <h3 class="kpi-value" id="kpi-transacciones">0</h3>
+                            <span class="kpi-subtitle">Movimientos Registrados</span>
+                        </div>
                     </div>
                 </section>
                 
-                <!-- Top Product Highlights -->
-                <section class="panel glass panel-highlight">
-                    <div class="panel-header">
-                        <h2><i class="fa-solid fa-award"></i> Mayor Gasto del Período</h2>
-                    </div>
-                    <div class="panel-body highlight-body">
-                        <div id="highlight-placeholder" class="placeholder-msg">
-                            <i class="fa-solid fa-receipt placeholder-icon"></i>
-                            <p>Esperando selección...</p>
+                <!-- Visualizaciones y Data Grid -->
+                <div class="dashboard-grid">
+                    <section class="panel glass panel-chart">
+                        <div class="panel-header">
+                            <h2><i class="fa-solid fa-chart-bar"></i> Distribución de Gasto por Producto</h2>
+                            <div class="panel-actions">
+                                <span class="badge" id="chart-badge">Taller Mina</span>
+                            </div>
                         </div>
-                        <div id="highlight-content" style="display: none;">
-                            <div class="product-highlight-card">
-                                <i class="fa-solid fa-fire-flame-simple highlight-fire-icon"></i>
-                                <span class="highlight-label">Producto Líder en Consumo</span>
-                                <h4 class="highlight-prod-name" id="highlight-product-name">---</h4>
-                                <div class="highlight-price-tag">
-                                    <span class="price-lbl">Gasto Acumulado:</span>
-                                    <span class="price-val" id="highlight-product-cost">S/ 0.00</span>
+                        <div class="panel-body chart-body">
+                            <div id="chart-placeholder" class="placeholder-msg">
+                                <i class="fa-solid fa-chart-pie placeholder-icon"></i>
+                                <p>Selecciona un Año, Mes y Mina en el panel izquierdo para visualizar el gráfico estadístico.</p>
+                            </div>
+                            <img id="chart-img" class="chart-image" src="" alt="Gráfico de consumos" style="display: none;">
+                        </div>
+                    </section>
+                    
+                    <section class="panel glass panel-highlight">
+                        <div class="panel-header">
+                            <h2><i class="fa-solid fa-award"></i> Mayor Gasto del Período</h2>
+                        </div>
+                        <div class="panel-body highlight-body">
+                            <div id="highlight-placeholder" class="placeholder-msg">
+                                <i class="fa-solid fa-receipt placeholder-icon"></i>
+                                <p>Esperando selección...</p>
+                            </div>
+                            <div id="highlight-content" style="display: none;">
+                                <div class="product-highlight-card">
+                                    <i class="fa-solid fa-fire-flame-simple highlight-fire-icon"></i>
+                                    <span class="highlight-label">Producto Líder en Gasto</span>
+                                    <h4 class="highlight-prod-name" id="highlight-product-name">---</h4>
+                                    <div class="highlight-price-tag">
+                                        <span class="price-lbl">Gasto Acumulado (con IGV):</span>
+                                        <span class="price-val" id="highlight-product-cost">S/ 0.00</span>
+                                    </div>
                                 </div>
                             </div>
+                        </div>
+                    </section>
+                </div>
+                
+                <!-- Tabla Detallada -->
+                <section class="panel glass panel-table">
+                    <div class="panel-header">
+                        <h2><i class="fa-solid fa-table-list"></i> Detalle de Consumos y Transacciones</h2>
+                        <div class="table-search-wrapper">
+                            <i class="fa-solid fa-magnifying-glass search-icon"></i>
+                            <input type="text" id="table-search" placeholder="Buscar producto u observaciones..." class="search-input" disabled>
+                        </div>
+                    </div>
+                    <div class="panel-body table-body">
+                        <div id="table-placeholder" class="placeholder-msg">
+                            <i class="fa-solid fa-folder-open placeholder-icon"></i>
+                            <p>No se han filtrado registros para mostrar.</p>
+                        </div>
+                        <div class="table-responsive" id="table-container" style="display: none;">
+                            <table class="data-table" id="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Fecha</th>
+                                        <th>POOT</th>
+                                        <th>Descripción del Producto</th>
+                                        <th>Unidad</th>
+                                        <th class="text-center">Cant.</th>
+                                        <th class="text-right">Precio Unit.</th>
+                                        <th class="text-right">Total</th>
+                                        <th class="text-right">Total + IGV</th>
+                                        <th>Observaciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="table-tbody">
+                                    <!-- Dinámico -->
+                                </tbody>
+                            </table>
                         </div>
                     </div>
                 </section>
             </div>
             
-            <!-- Data Table Section -->
-            <section class="panel glass panel-table">
-                <div class="panel-header">
-                    <h2><i class="fa-solid fa-table-list"></i> Detalle de Consumos y Transacciones</h2>
-                    <div class="table-search-wrapper">
-                        <i class="fa-solid fa-magnifying-glass search-icon"></i>
-                        <input type="text" id="table-search" placeholder="Buscar producto u observaciones..." class="search-input" disabled>
+            <!-- VISTA 2: REPORTE CONSOLIDADO (NUEVA VISTA GRUPAL) -->
+            <div id="view-consolidated-section" class="view-section">
+                <!-- Panel de Checkboxes para Selección Múltiple -->
+                <section class="panel glass panel-mina-selector">
+                    <div class="panel-header">
+                        <h2><i class="fa-solid fa-helmet-safety"></i> Seleccionar Minas a Consolidar</h2>
+                        <div class="selector-actions">
+                            <button class="btn btn-secondary btn-sm" id="btn-select-all-minas">
+                                <i class="fa-solid fa-check-double"></i> Seleccionar Todas
+                            </button>
+                            <button class="btn btn-secondary btn-sm" id="btn-deselect-all-minas">
+                                <i class="fa-solid fa-xmark"></i> Desmarcar Todas
+                            </button>
+                        </div>
                     </div>
-                </div>
-                <div class="panel-body table-body">
-                    <div id="table-placeholder" class="placeholder-msg">
-                        <i class="fa-solid fa-folder-open placeholder-icon"></i>
-                        <p>No se han filtrado registros para mostrar.</p>
+                    <div class="panel-body">
+                        <div id="consolidated-minas-placeholder" class="placeholder-msg">
+                            <i class="fa-solid fa-calendar-check placeholder-icon"></i>
+                            <p>Selecciona Año y Mes en el panel izquierdo para cargar las minas del período.</p>
+                        </div>
+                        <!-- Cuadrícula interactiva de checkboxes de minas -->
+                        <div class="minas-checkbox-grid" id="minas-checkbox-grid" style="display: none;">
+                            <!-- Dinámico -->
+                        </div>
                     </div>
-                    <div class="table-responsive" id="table-container" style="display: none;">
-                        <table class="data-table" id="data-table">
-                            <thead>
-                                <tr>
-                                    <th>Fecha</th>
-                                    <th>POOT</th>
-                                    <th>Descripción del Producto</th>
-                                    <th>Unidad</th>
-                                    <th class="text-center">Cant.</th>
-                                    <th class="text-right">Precio Unit.</th>
-                                    <th class="text-right">Total</th>
-                                    <th class="text-right">Total + IGV</th>
-                                    <th>Observaciones</th>
-                                </tr>
-                            </thead>
-                            <tbody id="table-tbody">
-                                <!-- Filas dinámicas -->
-                            </tbody>
-                        </table>
+                </section>
+                
+                <!-- Tabla de Resumen Ejecutivo Consolidado -->
+                <section class="panel glass panel-consolidated-summary">
+                    <div class="panel-header">
+                        <h2><i class="fa-solid fa-square-poll-horizontal"></i> Resumen de Gastos del Grupo Seleccionado</h2>
+                        <div class="panel-actions">
+                            <button class="btn btn-pdf" id="btn-download-consolidated-inline" disabled>
+                                <i class="fa-solid fa-file-pdf"></i> Descargar PDF Consolidado
+                            </button>
+                        </div>
                     </div>
-                </div>
-            </section>
+                    <div class="panel-body table-body">
+                        <div id="consolidated-table-placeholder" class="placeholder-msg">
+                            <i class="fa-solid fa-list-check placeholder-icon"></i>
+                            <p>Marca al menos una mina de la lista superior para visualizar el resumen financiero.</p>
+                        </div>
+                        <div class="table-responsive" id="consolidated-table-container" style="display: none;">
+                            <table class="data-table" id="consolidated-table">
+                                <thead>
+                                    <tr>
+                                        <th>Mina / Area de Destino</th>
+                                        <th class="text-center">Nro Transacciones</th>
+                                        <th class="text-right">Total (Sin IGV)</th>
+                                        <th class="text-right">Total + IGV</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="consolidated-table-tbody">
+                                    <!-- Dinámico -->
+                                </tbody>
+                                <tfoot>
+                                    <tr class="total-row">
+                                        <td>Total General Consolidado</td>
+                                        <td class="text-center" id="consolidated-total-trans">0</td>
+                                        <td class="text-right" id="consolidated-total-sin-igv">S/ 0.00</td>
+                                        <td class="text-right" id="consolidated-total-con-igv">S/ 0.00</td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+            </div>
             
         </main>
         

@@ -1,8 +1,9 @@
 // Variables globales del estado
 let activePeriods = [];
 let allRecords = []; // Guardar registros cargados localmente para búsqueda
+let currentTab = 'individual'; // individual | consolidated
 
-// Elementos de la interfaz
+// Elementos de la interfaz - Barra lateral
 const uploadZone = document.getElementById('upload-zone');
 const fileInput = document.getElementById('file-input');
 const activeFilename = document.getElementById('active-filename');
@@ -11,19 +12,29 @@ const btnResetFile = document.getElementById('btn-reset-file');
 const selectYear = document.getElementById('select-year');
 const selectMonth = document.getElementById('select-month');
 const selectMina = document.getElementById('select-mina');
+const sidebarMinaGroup = document.getElementById('sidebar-mina-group');
 
 const btnDownloadExcel = document.getElementById('btn-download-excel');
 const btnDownloadPdf = document.getElementById('btn-download-pdf');
+const btnDownloadConsolidated = document.getElementById('btn-download-consolidated');
 
+const sidebarDownloadIndividual = document.getElementById('sidebar-download-individual');
+const sidebarDownloadConsolidated = document.getElementById('sidebar-download-consolidated');
 const currentDateIndicator = document.getElementById('current-date-indicator');
 
-// KPIs
+// Elementos de navegación de pestañas
+const tabBtnIndividual = document.getElementById('tab-btn-individual');
+const tabBtnConsolidated = document.getElementById('tab-btn-consolidated');
+const viewIndividualSection = document.getElementById('view-individual-section');
+const viewConsolidatedSection = document.getElementById('view-consolidated-section');
+
+// Elementos - KPIs Vista Individual
 const kpiTotalIgv = document.getElementById('kpi-total-igv');
 const kpiTotalSinIgv = document.getElementById('kpi-total-sin-igv');
 const kpiTotalCant = document.getElementById('kpi-total-cant');
 const kpiTransacciones = document.getElementById('kpi-transacciones');
 
-// Visualizaciones y Tabla
+// Elementos - Visualizaciones y Tabla Individual
 const chartPlaceholder = document.getElementById('chart-placeholder');
 const chartImg = document.getElementById('chart-img');
 const highlightPlaceholder = document.getElementById('highlight-placeholder');
@@ -36,13 +47,31 @@ const tableContainer = document.getElementById('table-container');
 const tableTbody = document.getElementById('table-tbody');
 const tableSearch = document.getElementById('table-search');
 
+// Elementos - Vista Consolidada
+const consolidatedMinasPlaceholder = document.getElementById('consolidated-minas-placeholder');
+const minasCheckboxGrid = document.getElementById('minas-checkbox-grid');
+const btnSelectAllMinas = document.getElementById('btn-select-all-minas');
+const btnDeselectAllMinas = document.getElementById('btn-deselect-all-minas');
+
+const consolidatedTablePlaceholder = document.getElementById('consolidated-table-placeholder');
+const consolidatedTableContainer = document.getElementById('consolidated-table-container');
+const consolidatedTableTbody = document.getElementById('consolidated-table-tbody');
+const btnDownloadConsolidatedInline = document.getElementById('btn-download-consolidated-inline');
+
+// Totales de tabla consolidada
+const consolidatedTotalTrans = document.getElementById('consolidated-total-trans');
+const consolidatedTotalSinIgv = document.getElementById('consolidated-total-sin-igv');
+const consolidatedTotalConIgv = document.getElementById('consolidated-total-con-igv');
+
 // --- INICIALIZACIÓN ---
 document.addEventListener('DOMContentLoaded', () => {
     initApp();
     setupUploadHandlers();
+    setupTabNavigation();
     setupFilterHandlers();
     setupSearchHandler();
     setupDownloadHandlers();
+    setupConsolidatedActions();
 });
 
 // Carga inicial de filtros y metadatos
@@ -76,19 +105,71 @@ async function initApp() {
         selectMina.innerHTML = '<option value="">Selecciona mina</option>';
         selectMina.disabled = true;
         
-        // Llenar el selector de minas (permanente o por período)
-        // Guardamos las minas para llenarlas después
+        // Guardar las minas en el objeto global de ventana
         window.allMinas = data.minas;
         
-        // Limpiar Dashboard
+        // Resetear vistas
         resetDashboard();
+        resetConsolidatedView();
+        
+        // Inicializar display por defecto
+        switchTab('individual');
         
     } catch (e) {
         console.error("Error inicializando la app:", e);
     }
 }
 
-// Limpiar Dashboard al estado inicial
+// --- NAVEGACIÓN ENTRE PESTAÑAS ---
+function setupTabNavigation() {
+    tabBtnIndividual.addEventListener('click', () => switchTab('individual'));
+    tabBtnConsolidated.addEventListener('click', () => switchTab('consolidated'));
+}
+
+function switchTab(tab) {
+    currentTab = tab;
+    
+    if (tab === 'individual') {
+        tabBtnIndividual.classList.add('active');
+        tabBtnConsolidated.classList.remove('active');
+        viewIndividualSection.style.display = 'flex';
+        viewConsolidatedSection.style.display = 'none';
+        
+        sidebarMinaGroup.style.display = 'block';
+        sidebarDownloadIndividual.style.display = 'block';
+        sidebarDownloadConsolidated.style.display = 'none';
+        
+        // Re-evaluar estado del Dashboard si hay filtros seleccionados
+        const year = selectYear.value;
+        const month = selectMonth.value;
+        const mina = selectMina.value;
+        if (year && month && mina) {
+            runAnalysis(year, month, mina);
+        } else {
+            resetDashboard();
+        }
+    } else {
+        tabBtnIndividual.classList.remove('active');
+        tabBtnConsolidated.classList.add('active');
+        viewIndividualSection.style.display = 'none';
+        viewConsolidatedSection.style.display = 'flex';
+        
+        sidebarMinaGroup.style.display = 'none';
+        sidebarDownloadIndividual.style.display = 'none';
+        sidebarDownloadConsolidated.style.display = 'block';
+        
+        // Cargar checkboxes de minas si Año y Mes ya están seleccionados
+        const year = selectYear.value;
+        const month = selectMonth.value;
+        if (year && month) {
+            renderMinasCheckboxes();
+        } else {
+            resetConsolidatedView();
+        }
+    }
+}
+
+// Limpiar Dashboard Individual al estado inicial
 function resetDashboard() {
     kpiTotalIgv.innerText = "S/ 0.00";
     kpiTotalSinIgv.innerText = "S/ 0.00";
@@ -112,9 +193,26 @@ function resetDashboard() {
     btnDownloadPdf.disabled = true;
 }
 
+// Limpiar Vista Consolidada al estado inicial
+function resetConsolidatedView() {
+    consolidatedMinasPlaceholder.style.display = "flex";
+    minasCheckboxGrid.style.display = "none";
+    minasCheckboxGrid.innerHTML = "";
+    
+    consolidatedTablePlaceholder.style.display = "flex";
+    consolidatedTableContainer.style.display = "none";
+    consolidatedTableTbody.innerHTML = "";
+    
+    consolidatedTotalTrans.innerText = "0";
+    consolidatedTotalSinIgv.innerText = "S/ 0.00";
+    consolidatedTotalConIgv.innerText = "S/ 0.00";
+    
+    btnDownloadConsolidated.disabled = true;
+    btnDownloadConsolidatedInline.disabled = true;
+}
+
 // --- GESTIÓN DE CARGA DE ARCHIVOS ---
 function setupUploadHandlers() {
-    // Clic en zona de subida abre selector
     uploadZone.addEventListener('click', () => fileInput.click());
     
     fileInput.addEventListener('change', (e) => {
@@ -123,7 +221,6 @@ function setupUploadHandlers() {
         }
     });
     
-    // Drag and Drop
     uploadZone.addEventListener('dragover', (e) => {
         e.preventDefault();
         uploadZone.classList.add('dragover');
@@ -141,7 +238,6 @@ function setupUploadHandlers() {
         }
     });
     
-    // Resetear a archivo local por defecto
     btnResetFile.addEventListener('click', async () => {
         try {
             const response = await fetch('/api/reset', { method: 'POST' });
@@ -158,7 +254,6 @@ async function handleFileUpload(file) {
     const formData = new FormData();
     formData.append('file', file);
     
-    // Mostrar feedback de carga
     activeFilename.innerText = "Cargando...";
     activeFilename.style.color = "#f59e0b";
     
@@ -176,7 +271,7 @@ async function handleFileUpload(file) {
             initApp();
         } else {
             alert(`Error: ${data.error}`);
-            initApp(); // Recargar el estado actual para restaurar
+            initApp();
         }
     } catch (e) {
         console.error("Error subiendo archivo:", e);
@@ -187,10 +282,10 @@ async function handleFileUpload(file) {
 
 // --- FILTROS REACTIVOS ---
 function setupFilterHandlers() {
-    // Al cambiar Año
     selectYear.addEventListener('change', () => {
         const selectedYear = selectYear.value;
         resetDashboard();
+        resetConsolidatedView();
         
         if (!selectedYear) {
             selectMonth.innerHTML = '<option value="">Selecciona mes</option>';
@@ -200,7 +295,6 @@ function setupFilterHandlers() {
             return;
         }
         
-        // Buscar meses del año seleccionado
         const period = activePeriods.find(p => p.year == selectedYear);
         if (period) {
             selectMonth.innerHTML = '<option value="">Selecciona mes</option>';
@@ -213,15 +307,14 @@ function setupFilterHandlers() {
             selectMonth.disabled = false;
         }
         
-        // Resetear mina
         selectMina.innerHTML = '<option value="">Selecciona mina</option>';
         selectMina.disabled = true;
     });
     
-    // Al cambiar Mes
     selectMonth.addEventListener('change', () => {
         const selectedMonth = selectMonth.value;
         resetDashboard();
+        resetConsolidatedView();
         
         if (!selectedMonth) {
             selectMina.innerHTML = '<option value="">Selecciona mina</option>';
@@ -229,7 +322,7 @@ function setupFilterHandlers() {
             return;
         }
         
-        // Llenar selector de minas (usamos todas las minas disponibles para Taller Mina)
+        // Llenar selector individual
         selectMina.innerHTML = '<option value="">Selecciona mina</option>';
         if (window.allMinas && window.allMinas.length > 0) {
             window.allMinas.forEach(mina => {
@@ -240,9 +333,13 @@ function setupFilterHandlers() {
             });
             selectMina.disabled = false;
         }
+        
+        // Si estamos en vista consolidada, renderizar los checkboxes automáticamente
+        if (currentTab === 'consolidated') {
+            renderMinasCheckboxes();
+        }
     });
     
-    // Al cambiar Mina -> Ejecutar Análisis
     selectMina.addEventListener('change', () => {
         const year = selectYear.value;
         const month = selectMonth.value;
@@ -256,10 +353,153 @@ function setupFilterHandlers() {
     });
 }
 
-// --- CONSULTAR ANÁLISIS ---
+// --- RENDERING CHECKBOXES DE MINAS (VISTA CONSOLIDADA) ---
+function renderMinasCheckboxes() {
+    if (!window.allMinas || window.allMinas.length === 0) return;
+    
+    consolidatedMinasPlaceholder.style.display = "none";
+    minasCheckboxGrid.innerHTML = "";
+    minasCheckboxGrid.style.display = "grid";
+    
+    window.allMinas.forEach(mina => {
+        const div = document.createElement('div');
+        div.className = 'mina-checkbox-item';
+        div.dataset.mina = mina;
+        
+        div.innerHTML = `
+            <input type="checkbox" id="chk-${mina.replace(/\s+/g, '-')}" value="${mina}">
+            <span title="${mina}">${mina}</span>
+        `;
+        
+        // Clic en la tarjeta activa el checkbox
+        div.addEventListener('click', (e) => {
+            const chk = div.querySelector('input[type="checkbox"]');
+            if (e.target !== chk) {
+                chk.checked = !chk.checked;
+            }
+            
+            if (chk.checked) {
+                div.classList.add('checked');
+            } else {
+                div.classList.remove('checked');
+            }
+            
+            updateConsolidatedSummary();
+        });
+        
+        minasCheckboxGrid.appendChild(div);
+    });
+    
+    // Al regenerar checkboxes, la tabla del consolidado se vacía
+    consolidatedTablePlaceholder.style.display = "flex";
+    consolidatedTableContainer.style.display = "none";
+    consolidatedTableTbody.innerHTML = "";
+    btnDownloadConsolidated.disabled = true;
+    btnDownloadConsolidatedInline.disabled = true;
+}
+
+// Acciones grupales de selección de minas
+function setupConsolidatedActions() {
+    btnSelectAllMinas.addEventListener('click', () => {
+        const items = minasCheckboxGrid.querySelectorAll('.mina-checkbox-item');
+        items.forEach(item => {
+            const chk = item.querySelector('input[type="checkbox"]');
+            chk.checked = true;
+            item.classList.add('checked');
+        });
+        updateConsolidatedSummary();
+    });
+    
+    btnDeselectAllMinas.addEventListener('click', () => {
+        const items = minasCheckboxGrid.querySelectorAll('.mina-checkbox-item');
+        items.forEach(item => {
+            const chk = item.querySelector('input[type="checkbox"]');
+            chk.checked = false;
+            item.classList.remove('checked');
+        });
+        updateConsolidatedSummary();
+    });
+}
+
+// --- ACTUALIZAR RESUMEN PREVIO CONSOLIDADO ---
+async function updateConsolidatedSummary() {
+    const year = selectYear.value;
+    const month = selectMonth.value;
+    
+    // Obtener todas las minas marcadas
+    const selectedMinas = [];
+    const checkeds = minasCheckboxGrid.querySelectorAll('input[type="checkbox"]:checked');
+    checkeds.forEach(chk => selectedMinas.push(chk.value));
+    
+    if (selectedMinas.length === 0) {
+        consolidatedTablePlaceholder.style.display = "flex";
+        consolidatedTableContainer.style.display = "none";
+        consolidatedTableTbody.innerHTML = "";
+        btnDownloadConsolidated.disabled = true;
+        btnDownloadConsolidatedInline.disabled = true;
+        return;
+    }
+    
+    try {
+        // Feedback de carga
+        consolidatedTablePlaceholder.style.display = "none";
+        consolidatedTableContainer.style.display = "block";
+        consolidatedTableTbody.innerHTML = '<tr><td colspan="4" class="text-center">Calculando costos agregados...</td></tr>';
+        
+        const response = await fetch('/api/consolidated/summary', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ year, month, minas: selectedMinas })
+        });
+        
+        const data = await response.json();
+        
+        if (data.error) {
+            consolidatedTableTbody.innerHTML = `<tr><td colspan="4" class="text-center text-danger">Error: ${data.error}</td></tr>`;
+            btnDownloadConsolidated.disabled = true;
+            btnDownloadConsolidatedInline.disabled = true;
+            return;
+        }
+        
+        // Cargar filas en la tabla
+        consolidatedTableTbody.innerHTML = "";
+        
+        if (data.rows.length === 0) {
+            consolidatedTableTbody.innerHTML = '<tr><td colspan="4" class="text-center">No se encontraron movimientos para las áreas seleccionadas en este período.</td></tr>';
+            btnDownloadConsolidated.disabled = true;
+            btnDownloadConsolidatedInline.disabled = true;
+            return;
+        }
+        
+        data.rows.forEach(row => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td><strong>${row.mina}</strong></td>
+                <td class="text-center">${row.transacciones.toLocaleString('es-PE')}</td>
+                <td class="text-right">S/ ${row.total_sin_igv.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td class="text-right">S/ ${row.total_con_igv.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+            `;
+            consolidatedTableTbody.appendChild(tr);
+        });
+        
+        // Actualizar fila de totales al pie de la tabla
+        consolidatedTotalTrans.innerText = data.totals.transacciones.toLocaleString('es-PE');
+        consolidatedTotalSinIgv.innerText = `S/ ${data.totals.total_sin_igv.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        consolidatedTotalConIgv.innerText = `S/ ${data.totals.total_con_igv.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+        
+        // Activar descargas
+        btnDownloadConsolidated.disabled = false;
+        btnDownloadConsolidatedInline.disabled = false;
+        
+    } catch (e) {
+        console.error("Error cargando resumen consolidado:", e);
+        consolidatedTableTbody.innerHTML = '<tr><td colspan="4" class="text-center text-danger">Ocurrió un error al calcular los montos.</td></tr>';
+    }
+}
+
+// --- CONSULTAR ANÁLISIS INDIVIDUAL ---
 async function runAnalysis(year, month, mina) {
     try {
-        // Feedback de espera
         kpiTotalIgv.innerText = "Calculando...";
         kpiTotalSinIgv.innerText = "Calculando...";
         
@@ -283,24 +523,20 @@ async function runAnalysis(year, month, mina) {
             return;
         }
         
-        // 1. Cargar KPIs
         kpiTotalIgv.innerText = `S/ ${data.metrics.total_con_igv.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
         kpiTotalSinIgv.innerText = `S/ ${data.metrics.total_sin_igv.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
         kpiTotalCant.innerText = data.metrics.total_cant.toLocaleString('es-PE');
         kpiTransacciones.innerText = data.metrics.transacciones.toLocaleString('es-PE');
         
-        // 2. Cargar Gráfico
         chartPlaceholder.style.display = "none";
         chartImg.style.display = "block";
         chartImg.src = `data:image/png;base64,${data.chart}`;
         
-        // 3. Highlight Producto Top
         highlightPlaceholder.style.display = "none";
         highlightContent.style.display = "block";
         highlightProductName.innerText = data.metrics.top_prod_name;
         highlightProductCost.innerText = `S/ ${data.metrics.top_prod_monto.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
         
-        // 4. Cargar Tabla
         allRecords = data.records;
         renderTable(allRecords);
         tablePlaceholder.style.display = "none";
@@ -308,7 +544,6 @@ async function runAnalysis(year, month, mina) {
         tableSearch.disabled = false;
         tableSearch.value = "";
         
-        // Habilitar descargas
         btnDownloadExcel.disabled = false;
         btnDownloadPdf.disabled = false;
         
@@ -319,7 +554,7 @@ async function runAnalysis(year, month, mina) {
     }
 }
 
-// Renderizar tabla de datos
+// Renderizar tabla de datos individuales
 function renderTable(records) {
     tableTbody.innerHTML = "";
     
@@ -330,7 +565,6 @@ function renderTable(records) {
     
     records.forEach(row => {
         const tr = document.createElement('tr');
-        
         tr.innerHTML = `
             <td class="text-center">${row.fecha}</td>
             <td class="text-center">${row.poot}</td>
@@ -342,12 +576,11 @@ function renderTable(records) {
             <td class="text-right">S/ ${row.total_igv.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
             <td>${row.observaciones}</td>
         `;
-        
         tableTbody.appendChild(tr);
     });
 }
 
-// --- BÚSQUEDA RÁPIDA EN TABLA ---
+// --- BÚSQUEDA RÁPIDA EN TABLA INDIVIDUAL ---
 function setupSearchHandler() {
     tableSearch.addEventListener('input', () => {
         const query = tableSearch.value.toLowerCase().trim();
@@ -369,13 +602,18 @@ function setupSearchHandler() {
 
 // --- DESCARGAS AUTOMÁTICAS ---
 function setupDownloadHandlers() {
-    // Descargar Excel
+    // Descarga Excel Individual
     btnDownloadExcel.addEventListener('click', () => triggerDownload('/api/download/excel', 'xlsx'));
     
-    // Descargar PDF
+    // Descarga PDF Individual
     btnDownloadPdf.addEventListener('click', () => triggerDownload('/api/download/pdf', 'pdf'));
+    
+    // Descarga PDF Consolidado (sidebar y botón inline)
+    btnDownloadConsolidated.addEventListener('click', triggerConsolidatedDownload);
+    btnDownloadConsolidatedInline.addEventListener('click', triggerConsolidatedDownload);
 }
 
+// Descarga de Reporte Individual
 async function triggerDownload(url, ext) {
     const year = selectYear.value;
     const month = selectMonth.value;
@@ -383,7 +621,6 @@ async function triggerDownload(url, ext) {
     
     if (!year || !month || !mina) return;
     
-    // Deshabilitar botones durante la generación
     btnDownloadExcel.disabled = true;
     btnDownloadPdf.disabled = true;
     
@@ -402,15 +639,12 @@ async function triggerDownload(url, ext) {
             return;
         }
         
-        // Obtener el blob binario del archivo
         const blob = await response.blob();
         const blobUrl = window.URL.createObjectURL(blob);
         
-        // Crear un enlace invisible y simular clic
         const a = document.createElement('a');
         a.href = blobUrl;
         
-        // Obtener el nombre del archivo del encabezado content-disposition si existe
         const disposition = response.headers.get('content-disposition');
         let filename = `Reporte_${mina.replace(/\s+/g, '_')}_${year}_${month}.${ext}`;
         if (disposition && disposition.indexOf('attachment') !== -1) {
@@ -425,16 +659,66 @@ async function triggerDownload(url, ext) {
         document.body.appendChild(a);
         a.click();
         
-        // Limpiar
         document.body.removeChild(a);
         window.URL.revokeObjectURL(blobUrl);
         
     } catch (e) {
-        console.error("Error al descargar archivo:", e);
-        alert("Ocurrió un error al descargar el archivo de reporte.");
+        console.error("Error al descargar reporte individual:", e);
+        alert("Ocurrió un error al descargar el archivo.");
     } finally {
-        // Habilitar de nuevo
         btnDownloadExcel.disabled = false;
         btnDownloadPdf.disabled = false;
+    }
+}
+
+// Descarga de Reporte Consolidado Multipágina
+async function triggerConsolidatedDownload() {
+    const year = selectYear.value;
+    const month = selectMonth.value;
+    
+    const selectedMinas = [];
+    const checkeds = minasCheckboxGrid.querySelectorAll('input[type="checkbox"]:checked');
+    checkeds.forEach(chk => selectedMinas.push(chk.value));
+    
+    if (!year || !month || selectedMinas.length === 0) return;
+    
+    btnDownloadConsolidated.disabled = true;
+    btnDownloadConsolidatedInline.disabled = true;
+    
+    const btnText = btnDownloadConsolidatedInline.innerHTML;
+    btnDownloadConsolidatedInline.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Generando PDF Consolidado...';
+    
+    try {
+        const response = await fetch('/api/download/consolidated-pdf', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ year, month, minas: selectedMinas })
+        });
+        
+        if (!response.ok) {
+            const err = await response.json();
+            alert(`Error al generar el reporte consolidado: ${err.error}`);
+            return;
+        }
+        
+        const blob = await response.blob();
+        const blobUrl = window.URL.createObjectURL(blob);
+        
+        const a = document.createElement('a');
+        a.href = blobUrl;
+        a.download = `Reporte_Consolidado_${year}_${String(month).padStart(2, '0')}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(blobUrl);
+        
+    } catch (e) {
+        console.error("Error al descargar PDF consolidado:", e);
+        alert("Ocurrió un error al generar y descargar el reporte consolidado.");
+    } finally {
+        btnDownloadConsolidated.disabled = false;
+        btnDownloadConsolidatedInline.disabled = false;
+        btnDownloadConsolidatedInline.innerHTML = btnText;
     }
 }
