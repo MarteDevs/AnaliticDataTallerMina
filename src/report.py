@@ -3,6 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import xlsxwriter
+from fpdf import FPDF
 
 MONTHS_ES = {
     1: "ENERO", 2: "FEBRERO", 3: "MARZO", 4: "ABRIL", 5: "MAYO", 6: "JUNIO",
@@ -366,3 +367,254 @@ def generate_excel_report(df_mina, year, month, mina_name, output_dir, chart_pat
     writer.close()
     print(f"Reporte generado exitosamente: {filepath}")
     return filepath
+
+def safe_text(txt):
+    if not isinstance(txt, str):
+        txt = str(txt)
+    replacements = {
+        'á': 'a', 'é': 'e', 'í': 'i', 'ó': 'o', 'ú': 'u',
+        'Á': 'A', 'É': 'E', 'Í': 'I', 'Ó': 'O', 'Ú': 'U',
+        'ñ': 'n', 'Ñ': 'N', 'ü': 'u', 'Ü': 'U'
+    }
+    for k, v in replacements.items():
+        txt = txt.replace(k, v)
+    return txt.encode('latin-1', 'replace').decode('latin-1')
+
+class PDF(FPDF):
+    def __init__(self, title_text, subtitle_text, year, month):
+        super().__init__(orientation='landscape', unit='mm', format='A4')
+        self.title_text = title_text
+        self.subtitle_text = subtitle_text
+        self.year = year
+        self.month = month
+        
+    def header(self):
+        # Dibujar banner superior
+        self.set_fill_color(31, 78, 120) # #1F4E78
+        self.rect(0, 0, 297, 25, 'F')
+        
+        # Título
+        self.set_text_color(255, 255, 255)
+        self.set_font('helvetica', 'B', 14)
+        self.text(15, 11, safe_text(self.title_text))
+        
+        # Subtítulo
+        self.set_font('helvetica', 'I', 11)
+        self.text(15, 18, safe_text(f"{self.subtitle_text} | Reporte Generado Dinamicamente"))
+        
+        # Fecha a la derecha
+        self.set_font('helvetica', '', 9)
+        self.text(250, 15, safe_text(f"Periodo: {MONTHS_ES[self.month]} {self.year}"))
+        
+        self.ln(22) # Espacio para el contenido
+        
+    def footer(self):
+        self.set_y(-15)
+        self.set_fill_color(240, 240, 240)
+        self.rect(0, 210 - 15, 297, 15, 'F')
+        
+        self.set_text_color(100, 100, 100)
+        self.set_font('helvetica', 'I', 8)
+        self.cell(0, 10, safe_text(f"Pagina {self.page_no()} | Reporte de Taller Mina"), 0, 0, 'C')
+
+def generate_pdf_report(df_mina, year, month, mina_name, output_dir, chart_path=None):
+    os.makedirs(output_dir, exist_ok=True)
+    filename = f"Reporte_{clean_filename(mina_name)}_{year}_{month:02d}.pdf"
+    filepath = os.path.join(output_dir, filename)
+    
+    # Ordenar por fecha
+    df_sorted = df_mina.sort_values(by='FechaMovimiento')
+    
+    title_text = f"REPORTE DE CONSUMOS - TALLER MINA"
+    subtitle_text = f"MINA: {mina_name.upper()}"
+    
+    pdf = PDF(title_text, subtitle_text, year, month)
+    pdf.set_margins(15, 15, 15)
+    pdf.add_page()
+    
+    # 1. Bloque de Info de Filtros y Gráfico
+    # Si hay gráfico, colocamos filtros a la izquierda y el gráfico a la derecha
+    start_y = pdf.get_y()
+    
+    # Cuadro de filtros
+    pdf.set_fill_color(245, 247, 250)
+    pdf.rect(15, start_y, 90, 43, 'F')
+    pdf.set_draw_color(200, 200, 200)
+    pdf.rect(15, start_y, 90, 43, 'D')
+    
+    pdf.set_y(start_y + 3)
+    pdf.set_x(18)
+    pdf.set_font('helvetica', 'B', 10)
+    pdf.set_text_color(31, 78, 120)
+    pdf.cell(0, 5, safe_text("PARAMETROS DEL INFORME"), 0, 1)
+    pdf.ln(1)
+    
+    pdf.set_font('helvetica', '', 9)
+    pdf.set_text_color(60, 60, 60)
+    
+    filters = [
+        ("Area de Origen:", "Taller Mina"),
+        ("Comprobante:", "POOT"),
+        ("Mes Movimiento:", f"{MONTHS_ES[month]}"),
+        ("Ano Movimiento:", f"{year}")
+    ]
+    
+    for label, val in filters:
+        pdf.set_x(18)
+        pdf.set_font('helvetica', 'B', 9)
+        pdf.cell(32, 5, safe_text(label), 0, 0)
+        pdf.set_font('helvetica', '', 9)
+        pdf.cell(0, 5, safe_text(val), 0, 1)
+        
+    # Totales acumulados rápidos
+    total_cant = df_mina['Cantidad'].sum()
+    total_monto = df_mina['Total'].sum()
+    total_igv = df_mina['TOTAL  IGV'].sum()
+    
+    pdf.set_fill_color(230, 240, 250)
+    pdf.rect(15, start_y + 46, 90, 25, 'F')
+    pdf.rect(15, start_y + 46, 90, 25, 'D')
+    
+    pdf.set_y(start_y + 48)
+    pdf.set_x(18)
+    pdf.set_font('helvetica', 'B', 9)
+    pdf.set_text_color(31, 78, 120)
+    pdf.cell(35, 5, safe_text("Total Cantidad:"), 0, 0)
+    pdf.set_font('helvetica', '', 9)
+    pdf.set_text_color(33, 33, 33)
+    pdf.cell(0, 5, f"{total_cant:,.0f} UND", 0, 1)
+    
+    pdf.set_x(18)
+    pdf.set_font('helvetica', 'B', 9)
+    pdf.set_text_color(31, 78, 120)
+    pdf.cell(35, 5, safe_text("Total (Sin IGV):"), 0, 0)
+    pdf.set_font('helvetica', '', 9)
+    pdf.set_text_color(33, 33, 33)
+    pdf.cell(0, 5, f"S/ {total_monto:,.2f}", 0, 1)
+    
+    pdf.set_x(18)
+    pdf.set_font('helvetica', 'B', 9)
+    pdf.set_text_color(31, 78, 120)
+    pdf.cell(35, 5, safe_text("Total (Con IGV):"), 0, 0)
+    pdf.set_font('helvetica', '', 9)
+    pdf.set_text_color(33, 33, 33)
+    pdf.cell(0, 5, f"S/ {total_igv:,.2f}", 0, 1)
+    
+    # Insertar el gráfico
+    if chart_path and os.path.exists(chart_path):
+        # Insertar gráfico a la derecha. Tamaño aproximado: 162mm de ancho y 71mm de alto
+        pdf.image(chart_path, x=120, y=start_y, w=162, h=71)
+        pdf.set_y(start_y + 75)
+    else:
+        pdf.set_y(start_y + 75)
+        
+    pdf.ln(3)
+    
+    # 2. Título de la tabla de movimientos
+    pdf.set_font('helvetica', 'B', 11)
+    pdf.set_text_color(31, 78, 120)
+    pdf.cell(0, 6, safe_text("DETALLE DE MOVIMIENTOS Y CONSUMOS"), 0, 1)
+    pdf.ln(1)
+    
+    # 3. Dibujar tabla
+    headers = ["Fecha", "POOT", "Descripcion del Producto", "Unidad", "Cant", "Precio", "Total", "Total + IGV"]
+    col_widths = [22, 22, 98, 17, 15, 31, 31, 31] # Total 267mm
+    
+    # Cabecera de la tabla
+    pdf.set_font('helvetica', 'B', 8.5)
+    pdf.set_fill_color(31, 78, 120)
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_draw_color(220, 220, 220)
+    
+    for i, header in enumerate(headers):
+        align = 'C' if i in [0, 1, 3, 4] else ('R' if i >= 5 else 'L')
+        pdf.cell(col_widths[i], 6, safe_text(header), 1, 0, align, fill=True)
+    pdf.ln()
+    
+    # Filas de datos
+    pdf.set_font('helvetica', '', 7.5)
+    pdf.set_text_color(33, 33, 33)
+    
+    fill = False
+    for idx, row in df_sorted.iterrows():
+        # Controlar salto de página manual para no romper celdas
+        if pdf.get_y() > 175: # El alto útil es 210mm, descontando 15mm de margen inferior
+            pdf.add_page()
+            # Redibujar cabeceras
+            pdf.set_font('helvetica', 'B', 8.5)
+            pdf.set_fill_color(31, 78, 120)
+            pdf.set_text_color(255, 255, 255)
+            for i, header in enumerate(headers):
+                align = 'C' if i in [0, 1, 3, 4] else ('R' if i >= 5 else 'L')
+                pdf.cell(col_widths[i], 6, safe_text(header), 1, 0, align, fill=True)
+            pdf.ln()
+            pdf.set_font('helvetica', '', 7.5)
+            pdf.set_text_color(33, 33, 33)
+            
+        f2_date = row.get('FechaMovimiento')
+        date_str = f2_date.strftime('%d/%m/%Y') if pd.notna(f2_date) else ""
+        poot = str(row.get('Numero', ''))
+        desc_prod = str(row.get('DescProducto', ''))
+        med = str(row.get('Unidad', ''))
+        cant = row.get('Cantidad', 0)
+        precio = row.get('Precio', 0.0)
+        total = row.get('Total', 0.0)
+        total_igv = row.get('TOTAL  IGV', 0.0)
+        
+        # Color de fondo alterno
+        if fill:
+            pdf.set_fill_color(248, 249, 250)
+        else:
+            pdf.set_fill_color(255, 255, 255)
+            
+        # Dibujar celdas
+        pdf.cell(col_widths[0], 5.5, safe_text(date_str), 1, 0, 'C', fill=True)
+        pdf.cell(col_widths[1], 5.5, safe_text(poot), 1, 0, 'C', fill=True)
+        
+        # Limitar longitud de descripción del producto para que no se desborde
+        if len(desc_prod) > 52:
+            desc_prod = desc_prod[:49] + "..."
+        pdf.cell(col_widths[2], 5.5, safe_text(desc_prod), 1, 0, 'L', fill=True)
+        
+        pdf.cell(col_widths[3], 5.5, safe_text(med), 1, 0, 'C', fill=True)
+        pdf.cell(col_widths[4], 5.5, f"{cant:,.0f}", 1, 0, 'C', fill=True)
+        pdf.cell(col_widths[5], 5.5, f"S/ {precio:,.2f}", 1, 0, 'R', fill=True)
+        pdf.cell(col_widths[6], 5.5, f"S/ {total:,.2f}", 1, 0, 'R', fill=True)
+        pdf.cell(col_widths[7], 5.5, f"S/ {total_igv:,.2f}", 1, 0, 'R', fill=True)
+        pdf.ln()
+        
+        fill = not fill
+
+    # Fila de Total General
+    if pdf.get_y() > 180:
+        pdf.add_page()
+        # Redibujar cabeceras por si acaso
+        pdf.set_font('helvetica', 'B', 8.5)
+        pdf.set_fill_color(31, 78, 120)
+        pdf.set_text_color(255, 255, 255)
+        for i, header in enumerate(headers):
+            align = 'C' if i in [0, 1, 3, 4] else ('R' if i >= 5 else 'L')
+            pdf.cell(col_widths[i], 6, safe_text(header), 1, 0, align, fill=True)
+        pdf.ln()
+        
+    pdf.set_font('helvetica', 'B', 8)
+    pdf.set_fill_color(221, 235, 247) # Celeste claro #DDEBF7
+    pdf.set_text_color(31, 78, 120)
+    
+    # Escribir la etiqueta del total cubriendo las primeras 4 columnas (22+22+98+17 = 159mm)
+    pdf.cell(159, 6, safe_text("Total general"), 1, 0, 'L', fill=True)
+    
+    # Escribir cantidad total
+    pdf.cell(col_widths[4], 6, f"{total_cant:,.0f}", 1, 0, 'C', fill=True)
+    
+    # Escribir precios, totales
+    total_precio = df_mina['Precio'].sum()
+    pdf.cell(col_widths[5], 6, f"S/ {total_precio:,.2f}", 1, 0, 'R', fill=True)
+    pdf.cell(col_widths[6], 6, f"S/ {total_monto:,.2f}", 1, 0, 'R', fill=True)
+    pdf.cell(col_widths[7], 6, f"S/ {total_igv:,.2f}", 1, 0, 'R', fill=True)
+    pdf.ln()
+    
+    pdf.output(filepath)
+    print(f"Reporte PDF generado exitosamente: {filepath}")
+    return filepath
+
