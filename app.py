@@ -14,7 +14,7 @@ app = Flask(__name__)
 app.secret_key = "analisis_data_secret_key"
 
 # Configuración de archivos
-DEFAULT_FILE_PATH = r"d:\vps-program-proyects\AnalisisData\FEBRERO 2026  INFORME.xlsx"
+DEFAULT_FILE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "FEBRERO 2026  INFORME.xlsx")
 UPLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "uploads")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
