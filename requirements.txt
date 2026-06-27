@@ -6,3 +6,4 @@ xlsxwriter
 flask
 fpdf2
 gunicorn
+waitress
