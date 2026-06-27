@@ -1,7 +1,14 @@
 // Variables globales del estado
 let activePeriods = [];
-let allRecords = []; // Guardar registros cargados localmente para búsqueda
+let allRecords = []; // Guardar registros cargados localmente para búsqueda y paginación
 let currentTab = 'individual'; // individual | consolidated
+
+// Estado de paginación
+let currentPage = 1;
+const recordsPerPage = 20;
+
+// Caché de consolidado en cliente
+const consolidatedCache = {};
 
 // Elementos de la interfaz - Barra lateral
 const uploadZone = document.getElementById('upload-zone');
@@ -37,6 +44,7 @@ const kpiTransacciones = document.getElementById('kpi-transacciones');
 // Elementos - Visualizaciones y Tabla Individual
 const chartPlaceholder = document.getElementById('chart-placeholder');
 const chartImg = document.getElementById('chart-img');
+const chartSkeleton = document.getElementById('chart-skeleton');
 const highlightPlaceholder = document.getElementById('highlight-placeholder');
 const highlightContent = document.getElementById('highlight-content');
 const highlightProductName = document.getElementById('highlight-product-name');
@@ -44,8 +52,15 @@ const highlightProductCost = document.getElementById('highlight-product-cost');
 
 const tablePlaceholder = document.getElementById('table-placeholder');
 const tableContainer = document.getElementById('table-container');
+const tableSkeleton = document.getElementById('table-skeleton');
 const tableTbody = document.getElementById('table-tbody');
 const tableSearch = document.getElementById('table-search');
+
+// Elementos de Paginación
+const paginationContainer = document.getElementById('pagination-container');
+const paginationInfo = document.getElementById('pagination-info');
+const btnPagePrev = document.getElementById('btn-page-prev');
+const btnPageNext = document.getElementById('btn-page-next');
 
 // Elementos - Vista Consolidada
 const consolidatedMinasPlaceholder = document.getElementById('consolidated-minas-placeholder');
@@ -64,6 +79,9 @@ const consolidatedTotalTrans = document.getElementById('consolidated-total-trans
 const consolidatedTotalSinIgv = document.getElementById('consolidated-total-sin-igv');
 const consolidatedTotalConIgv = document.getElementById('consolidated-total-con-igv');
 
+// Contenedor Toast
+const toastContainer = document.getElementById('toast-container');
+
 // --- INICIALIZACIÓN ---
 document.addEventListener('DOMContentLoaded', () => {
     initApp();
@@ -73,7 +91,52 @@ document.addEventListener('DOMContentLoaded', () => {
     setupSearchHandler();
     setupDownloadHandlers();
     setupConsolidatedActions();
+    setupPaginationHandlers();
 });
+
+// Función Utilitaria: Debounce (para evitar sobrecarga de DOM en búsquedas)
+function debounce(func, delay) {
+    let timer;
+    return function(...args) {
+        clearTimeout(timer);
+        timer = setTimeout(() => func.apply(this, args), delay);
+    };
+}
+
+// Sistema de Notificaciones Toast Flotantes Premium
+function showToast(message, type = 'info') {
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    
+    let iconClass = 'fa-circle-info';
+    if (type === 'success') iconClass = 'fa-circle-check';
+    if (type === 'error') iconClass = 'fa-circle-xmark';
+    
+    toast.innerHTML = `
+        <i class="fa-solid ${iconClass} toast-icon"></i>
+        <div class="toast-message">${message}</div>
+        <button class="toast-close" title="Cerrar"><i class="fa-solid fa-xmark"></i></button>
+    `;
+    
+    // Acción del botón cerrar
+    toast.querySelector('.toast-close').addEventListener('click', () => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 400);
+    });
+    
+    toastContainer.appendChild(toast);
+    
+    // Animación de entrada
+    setTimeout(() => toast.classList.add('show'), 50);
+    
+    // Auto-eliminar tras 4.5 segundos
+    setTimeout(() => {
+        if (toast.parentNode) {
+            toast.classList.remove('show');
+            setTimeout(() => toast.remove(), 400);
+        }
+    }, 4500);
+}
 
 // Carga inicial de filtros y metadatos
 async function initApp() {
@@ -83,11 +146,10 @@ async function initApp() {
         const data = await response.json();
         
         if (data.error) {
-            alert(`Error: ${data.error}`);
+            showToast(`Error al inicializar filtros: ${data.error}`, 'error');
             return;
         }
         
-        // Cargar metadatos
         activeFilename.innerText = data.filename;
         activePeriods = data.periods;
         
@@ -106,18 +168,15 @@ async function initApp() {
         selectMina.innerHTML = '<option value="">Selecciona mina</option>';
         selectMina.disabled = true;
         
-        // Guardar las minas en el objeto global de ventana
         window.allMinas = data.minas;
         
-        // Resetear vistas
+        // Resetear displays
         resetDashboard();
         resetConsolidatedView();
         
-        // Inicializar display por defecto
-        switchTab('individual');
-        
     } catch (e) {
         console.error("Error inicializando la app:", e);
+        showToast("Error crítico inicializando la app.", "error");
     }
 }
 
@@ -140,7 +199,6 @@ function switchTab(tab) {
         sidebarDownloadIndividual.style.display = 'block';
         sidebarDownloadConsolidated.style.display = 'none';
         
-        // Re-evaluar estado del Dashboard si hay filtros seleccionados
         const year = selectYear.value;
         const month = selectMonth.value;
         const mina = selectMina.value;
@@ -159,7 +217,6 @@ function switchTab(tab) {
         sidebarDownloadIndividual.style.display = 'none';
         sidebarDownloadConsolidated.style.display = 'block';
         
-        // Cargar checkboxes de minas si Año y Mes ya están seleccionados
         const year = selectYear.value;
         const month = selectMonth.value;
         if (year && month) {
@@ -179,6 +236,7 @@ function resetDashboard() {
     
     chartPlaceholder.style.display = "flex";
     chartImg.style.display = "none";
+    chartSkeleton.style.display = "none";
     chartImg.src = "";
     
     highlightPlaceholder.style.display = "flex";
@@ -186,6 +244,8 @@ function resetDashboard() {
     
     tablePlaceholder.style.display = "flex";
     tableContainer.style.display = "none";
+    tableSkeleton.style.display = "none";
+    paginationContainer.style.display = "none";
     tableTbody.innerHTML = "";
     tableSearch.value = "";
     tableSearch.disabled = true;
@@ -244,10 +304,11 @@ function setupUploadHandlers() {
         try {
             const response = await fetch('/api/reset', { method: 'POST' });
             const data = await response.json();
-            alert(data.message);
+            showToast(data.message, 'success');
             initApp();
         } catch (e) {
             console.error("Error al restaurar archivo por defecto:", e);
+            showToast("Error al restaurar base de datos.", 'error');
         }
     });
 }
@@ -258,6 +319,7 @@ async function handleFileUpload(file) {
     
     activeFilename.innerText = "Cargando...";
     activeFilename.style.color = "#f59e0b";
+    showToast("Subiendo base de datos y pre-calculando...", 'info');
     
     try {
         const response = await fetch('/api/upload', {
@@ -268,16 +330,17 @@ async function handleFileUpload(file) {
         const data = await response.json();
         
         if (response.ok) {
-            alert(data.message);
+            showToast(data.message, 'success');
             activeFilename.style.color = "#10b981";
             initApp();
         } else {
-            alert(`Error: ${data.error}`);
+            showToast(`Error al cargar: ${data.error}`, 'error');
+            activeFilename.style.color = "#ef4444";
             initApp();
         }
     } catch (e) {
         console.error("Error subiendo archivo:", e);
-        alert("Ocurrió un error al subir el archivo.");
+        showToast("Ocurrió un error al subir el archivo.", 'error');
         initApp();
     }
 }
@@ -324,7 +387,6 @@ function setupFilterHandlers() {
             return;
         }
         
-        // Llenar selector individual
         selectMina.innerHTML = '<option value="">Selecciona mina</option>';
         if (window.allMinas && window.allMinas.length > 0) {
             window.allMinas.forEach(mina => {
@@ -336,7 +398,6 @@ function setupFilterHandlers() {
             selectMina.disabled = false;
         }
         
-        // Si estamos en vista consolidada, renderizar los checkboxes automáticamente
         if (currentTab === 'consolidated') {
             renderMinasCheckboxes();
         }
@@ -374,7 +435,6 @@ function renderMinasCheckboxes() {
             <span title="${mina}">${mina}</span>
         `;
         
-        // Clic en la tarjeta activa el checkbox
         div.addEventListener('click', (e) => {
             const chk = div.querySelector('input[type="checkbox"]');
             if (e.target !== chk) {
@@ -393,7 +453,6 @@ function renderMinasCheckboxes() {
         minasCheckboxGrid.appendChild(div);
     });
     
-    // Al regenerar checkboxes, la tabla del consolidado se vacía
     consolidatedTablePlaceholder.style.display = "flex";
     consolidatedTableContainer.style.display = "none";
     consolidatedTableTbody.innerHTML = "";
@@ -401,9 +460,8 @@ function renderMinasCheckboxes() {
     btnDownloadConsolidatedInline.disabled = true;
 }
 
-// Acciones grupales de selección de minas
+// Acciones grupales de selección de minas (con soporte de debounce en búsquedas)
 function setupConsolidatedActions() {
-    // Seleccionar solo las visibles en pantalla
     btnSelectAllMinas.addEventListener('click', () => {
         const items = minasCheckboxGrid.querySelectorAll('.mina-checkbox-item');
         items.forEach(item => {
@@ -416,7 +474,6 @@ function setupConsolidatedActions() {
         updateConsolidatedSummary();
     });
     
-    // Desmarcar solo las visibles en pantalla
     btnDeselectAllMinas.addEventListener('click', () => {
         const items = minasCheckboxGrid.querySelectorAll('.mina-checkbox-item');
         items.forEach(item => {
@@ -429,8 +486,8 @@ function setupConsolidatedActions() {
         updateConsolidatedSummary();
     });
     
-    // Buscador interactivo de minas
-    minaSearch.addEventListener('input', () => {
+    // Buscador interactivo de minas con debounce de 100ms
+    minaSearch.addEventListener('input', debounce(() => {
         const query = minaSearch.value.toLowerCase().trim();
         const items = minasCheckboxGrid.querySelectorAll('.mina-checkbox-item');
         
@@ -442,15 +499,14 @@ function setupConsolidatedActions() {
                 item.style.display = 'none';
             }
         });
-    });
+    }, 100));
 }
 
-// --- ACTUALIZAR RESUMEN PREVIO CONSOLIDADO ---
+// --- ACTUALIZAR RESUMEN PREVIO CONSOLIDADO (CON SOPORTE DE CACHÉ DE CLIENTE) ---
 async function updateConsolidatedSummary() {
     const year = selectYear.value;
     const month = selectMonth.value;
     
-    // Obtener todas las minas marcadas
     const selectedMinas = [];
     const checkeds = minasCheckboxGrid.querySelectorAll('input[type="checkbox"]:checked');
     checkeds.forEach(chk => selectedMinas.push(chk.value));
@@ -464,8 +520,16 @@ async function updateConsolidatedSummary() {
         return;
     }
     
+    // Generar llave de cache única
+    const cacheKey = `${year}_${month}_${[...selectedMinas].sort().join(',')}`;
+    
+    // Verificar caché
+    if (consolidatedCache[cacheKey]) {
+        renderConsolidatedSummary(consolidatedCache[cacheKey]);
+        return;
+    }
+    
     try {
-        // Feedback de carga
         consolidatedTablePlaceholder.style.display = "none";
         consolidatedTableContainer.style.display = "block";
         consolidatedTableTbody.innerHTML = '<tr><td colspan="4" class="text-center">Calculando costos agregados...</td></tr>';
@@ -485,45 +549,10 @@ async function updateConsolidatedSummary() {
             return;
         }
         
-        // Cargar filas en la tabla
-        consolidatedTableTbody.innerHTML = "";
+        // Almacenar en caché local
+        consolidatedCache[cacheKey] = data;
         
-        if (data.rows.length === 0) {
-            consolidatedTableTbody.innerHTML = '<tr><td colspan="4" class="text-center">No se encontraron movimientos para las áreas seleccionadas en este período.</td></tr>';
-            btnDownloadConsolidated.disabled = true;
-            btnDownloadConsolidatedInline.disabled = true;
-            return;
-        }
-        
-        data.rows.forEach(row => {
-            const tr = document.createElement('tr');
-            if (row.sin_datos) {
-                tr.style.opacity = '0.55';
-                tr.innerHTML = `
-                    <td><strong>${row.mina}</strong> <span class="badge" style="background-color: rgba(255,255,255,0.05); color: var(--text-muted); font-size: 0.72rem; padding: 2px 6px; margin-left: 8px; border: 1px solid rgba(255,255,255,0.08); border-radius: 4px;"><i class="fa-solid fa-ban"></i> Sin movimientos</span></td>
-                    <td class="text-center" style="color: var(--text-muted);">0</td>
-                    <td class="text-right" style="color: var(--text-muted);">S/ 0.00</td>
-                    <td class="text-right" style="color: var(--text-muted);">S/ 0.00</td>
-                `;
-            } else {
-                tr.innerHTML = `
-                    <td><strong>${row.mina}</strong></td>
-                    <td class="text-center">${row.transacciones.toLocaleString('es-PE')}</td>
-                    <td class="text-right">S/ ${row.total_sin_igv.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                    <td class="text-right">S/ ${row.total_con_igv.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
-                `;
-            }
-            consolidatedTableTbody.appendChild(tr);
-        });
-        
-        // Actualizar fila de totales al pie de la tabla
-        consolidatedTotalTrans.innerText = data.totals.transacciones.toLocaleString('es-PE');
-        consolidatedTotalSinIgv.innerText = `S/ ${data.totals.total_sin_igv.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-        consolidatedTotalConIgv.innerText = `S/ ${data.totals.total_con_igv.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-        
-        // Activar descargas
-        btnDownloadConsolidated.disabled = false;
-        btnDownloadConsolidatedInline.disabled = false;
+        renderConsolidatedSummary(data);
         
     } catch (e) {
         console.error("Error cargando resumen consolidado:", e);
@@ -531,11 +560,66 @@ async function updateConsolidatedSummary() {
     }
 }
 
-// --- CONSULTAR ANÁLISIS INDIVIDUAL ---
+// Pintar la tabla y totales consolidados
+function renderConsolidatedSummary(data) {
+    consolidatedTableTbody.innerHTML = "";
+    
+    if (data.rows.length === 0) {
+        consolidatedTableTbody.innerHTML = '<tr><td colspan="4" class="text-center">No se encontraron movimientos para las áreas seleccionadas en este período.</td></tr>';
+        btnDownloadConsolidated.disabled = true;
+        btnDownloadConsolidatedInline.disabled = true;
+        return;
+    }
+    
+    data.rows.forEach(row => {
+        const tr = document.createElement('tr');
+        if (row.sin_datos) {
+            tr.style.opacity = '0.55';
+            tr.innerHTML = `
+                <td><strong>${row.mina}</strong> <span class="badge" style="background-color: rgba(255,255,255,0.05); color: var(--text-muted); font-size: 0.72rem; padding: 2px 6px; margin-left: 8px; border: 1px solid rgba(255,255,255,0.08); border-radius: 4px;"><i class="fa-solid fa-ban"></i> Sin movimientos</span></td>
+                <td class="text-center" style="color: var(--text-muted);">0</td>
+                <td class="text-right" style="color: var(--text-muted);">S/ 0.00</td>
+                <td class="text-right" style="color: var(--text-muted);">S/ 0.00</td>
+            `;
+        } else {
+            tr.innerHTML = `
+                <td><strong>${row.mina}</strong></td>
+                <td class="text-center">${row.transacciones.toLocaleString('es-PE')}</td>
+                <td class="text-right">S/ ${row.total_sin_igv.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                <td class="text-right">S/ ${row.total_con_igv.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+            `;
+        }
+        consolidatedTableTbody.appendChild(tr);
+    });
+    
+    consolidatedTotalTrans.innerText = data.totals.transacciones.toLocaleString('es-PE');
+    consolidatedTotalSinIgv.innerText = `S/ ${data.totals.total_sin_igv.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    consolidatedTotalConIgv.innerText = `S/ ${data.totals.total_con_igv.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    
+    btnDownloadConsolidated.disabled = false;
+    btnDownloadConsolidatedInline.disabled = false;
+}
+
+// --- CONSULTAR ANÁLISIS INDIVIDUAL (CON SKELETONS SHIMMER) ---
 async function runAnalysis(year, month, mina) {
     try {
-        kpiTotalIgv.innerText = "Calculando...";
-        kpiTotalSinIgv.innerText = "Calculando...";
+        // ACTIVAR SKELETONS LOADERS
+        kpiTotalIgv.innerHTML = '<span class="skeleton skeleton-kpi"></span>';
+        kpiTotalSinIgv.innerHTML = '<span class="skeleton skeleton-kpi"></span>';
+        kpiTotalCant.innerHTML = '<span class="skeleton" style="height:20px; width:40px;"></span>';
+        kpiTransacciones.innerHTML = '<span class="skeleton" style="height:20px; width:40px;"></span>';
+        
+        chartPlaceholder.style.display = "none";
+        chartImg.style.display = "none";
+        chartSkeleton.style.display = "block";
+        
+        highlightPlaceholder.style.display = "none";
+        highlightContent.style.display = "none";
+        
+        tablePlaceholder.style.display = "none";
+        tableContainer.style.display = "none";
+        tableSkeleton.style.display = "block";
+        paginationContainer.style.display = "none";
         
         const response = await fetch('/api/analyze', {
             method: 'POST',
@@ -545,59 +629,90 @@ async function runAnalysis(year, month, mina) {
         
         const data = await response.json();
         
+        // APAGAR SKELETONS
+        chartSkeleton.style.display = "none";
+        tableSkeleton.style.display = "none";
+        
         if (response.status === 404) {
-            alert(data.error);
+            showToast(data.error, 'info');
             resetDashboard();
             return;
         }
         
         if (data.error) {
-            alert(`Error en análisis: ${data.error}`);
+            showToast(`Error en análisis: ${data.error}`, 'error');
             resetDashboard();
             return;
         }
         
+        // 1. Cargar KPIs
         kpiTotalIgv.innerText = `S/ ${data.metrics.total_con_igv.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
         kpiTotalSinIgv.innerText = `S/ ${data.metrics.total_sin_igv.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
         kpiTotalCant.innerText = data.metrics.total_cant.toLocaleString('es-PE');
         kpiTransacciones.innerText = data.metrics.transacciones.toLocaleString('es-PE');
         
-        chartPlaceholder.style.display = "none";
+        // 2. Cargar Gráfico
         chartImg.style.display = "block";
         chartImg.src = `data:image/png;base64,${data.chart}`;
         
-        highlightPlaceholder.style.display = "none";
+        // 3. Highlight Top
         highlightContent.style.display = "block";
         highlightProductName.innerText = data.metrics.top_prod_name;
         highlightProductCost.innerText = `S/ ${data.metrics.top_prod_monto.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
         
+        // 4. Cargar Tabla con Paginación
         allRecords = data.records;
-        renderTable(allRecords);
-        tablePlaceholder.style.display = "none";
+        currentPage = 1;
+        
         tableContainer.style.display = "block";
         tableSearch.disabled = false;
         tableSearch.value = "";
+        
+        renderTablePage();
         
         btnDownloadExcel.disabled = false;
         btnDownloadPdf.disabled = false;
         
     } catch (e) {
         console.error("Error al ejecutar análisis:", e);
-        alert("Error al cargar el análisis de datos.");
+        showToast("Error al cargar el análisis de datos.", 'error');
         resetDashboard();
     }
 }
 
-// Renderizar tabla de datos individuales
-function renderTable(records) {
+// --- PAGINACIÓN DE LA TABLA DETALLADA ---
+function renderTablePage() {
     tableTbody.innerHTML = "";
     
-    if (records.length === 0) {
-        tableTbody.innerHTML = '<tr><td colspan="9" class="text-center">No se encontraron transacciones con el término buscado.</td></tr>';
+    // Filtrar localmente en base al input
+    const query = tableSearch.value.toLowerCase().trim();
+    const filteredRecords = allRecords.filter(row => {
+        return !query || 
+               row.producto.toLowerCase().includes(query) || 
+               row.observaciones.toLowerCase().includes(query) ||
+               row.poot.includes(query);
+    });
+    
+    if (filteredRecords.length === 0) {
+        tableTbody.innerHTML = '<tr><td colspan="9" class="text-center">No se encontraron transacciones.</td></tr>';
+        paginationContainer.style.display = "none";
         return;
     }
     
-    records.forEach(row => {
+    // Calcular límites de página
+    const totalRecords = filteredRecords.length;
+    const totalPages = Math.ceil(totalRecords / recordsPerPage);
+    
+    // Asegurar que currentPage no se salga de rango
+    if (currentPage > totalPages) currentPage = totalPages;
+    if (currentPage < 1) currentPage = 1;
+    
+    const startIndex = (currentPage - 1) * recordsPerPage;
+    const endIndex = startIndex + recordsPerPage;
+    const pageRecords = filteredRecords.slice(startIndex, endIndex);
+    
+    // Pintar registros
+    pageRecords.forEach(row => {
         const tr = document.createElement('tr');
         tr.innerHTML = `
             <td class="text-center">${row.fecha}</td>
@@ -612,37 +727,53 @@ function renderTable(records) {
         `;
         tableTbody.appendChild(tr);
     });
+    
+    // Configurar e interactuar con panel de paginación
+    paginationContainer.style.display = "flex";
+    paginationInfo.innerText = `Mostrando ${startIndex + 1}-${Math.min(endIndex, totalRecords)} de ${totalRecords} registros`;
+    
+    btnPagePrev.disabled = (currentPage === 1);
+    btnPageNext.disabled = (currentPage >= totalPages);
 }
 
-// --- BÚSQUEDA RÁPIDA EN TABLA INDIVIDUAL ---
-function setupSearchHandler() {
-    tableSearch.addEventListener('input', () => {
-        const query = tableSearch.value.toLowerCase().trim();
-        
-        if (!query) {
-            renderTable(allRecords);
-            return;
+// Configurar los botones Anterior y Siguiente
+function setupPaginationHandlers() {
+    btnPagePrev.addEventListener('click', () => {
+        if (currentPage > 1) {
+            currentPage--;
+            renderTablePage();
         }
-        
-        const filtered = allRecords.filter(row => {
-            return row.producto.toLowerCase().includes(query) || 
+    });
+    
+    btnPageNext.addEventListener('click', () => {
+        const query = tableSearch.value.toLowerCase().trim();
+        const filteredRecords = allRecords.filter(row => {
+            return !query || 
+                   row.producto.toLowerCase().includes(query) || 
                    row.observaciones.toLowerCase().includes(query) ||
                    row.poot.includes(query);
         });
+        const totalPages = Math.ceil(filteredRecords.length / recordsPerPage);
         
-        renderTable(filtered);
+        if (currentPage < totalPages) {
+            currentPage++;
+            renderTablePage();
+        }
     });
+}
+
+// --- BÚSQUEDA RÁPIDA EN TABLA INDIVIDUAL CON DEBOUNCE ---
+function setupSearchHandler() {
+    tableSearch.addEventListener('input', debounce(() => {
+        currentPage = 1; // Reiniciar página en nueva búsqueda
+        renderTablePage();
+    }, 150));
 }
 
 // --- DESCARGAS AUTOMÁTICAS ---
 function setupDownloadHandlers() {
-    // Descarga Excel Individual
     btnDownloadExcel.addEventListener('click', () => triggerDownload('/api/download/excel', 'xlsx'));
-    
-    // Descarga PDF Individual
     btnDownloadPdf.addEventListener('click', () => triggerDownload('/api/download/pdf', 'pdf'));
-    
-    // Descarga PDF Consolidado (sidebar y botón inline)
     btnDownloadConsolidated.addEventListener('click', triggerConsolidatedDownload);
     btnDownloadConsolidatedInline.addEventListener('click', triggerConsolidatedDownload);
 }
@@ -657,6 +788,7 @@ async function triggerDownload(url, ext) {
     
     btnDownloadExcel.disabled = true;
     btnDownloadPdf.disabled = true;
+    showToast("Generando reporte individual de descarga...", 'info');
     
     try {
         const response = await fetch(url, {
@@ -667,15 +799,12 @@ async function triggerDownload(url, ext) {
         
         if (!response.ok) {
             const err = await response.json();
-            alert(`Error al generar descarga: ${err.error}`);
-            btnDownloadExcel.disabled = false;
-            btnDownloadPdf.disabled = false;
+            showToast(`Error al descargar: ${err.error}`, 'error');
             return;
         }
         
         const blob = await response.blob();
         const blobUrl = window.URL.createObjectURL(blob);
-        
         const a = document.createElement('a');
         a.href = blobUrl;
         
@@ -695,10 +824,11 @@ async function triggerDownload(url, ext) {
         
         document.body.removeChild(a);
         window.URL.revokeObjectURL(blobUrl);
+        showToast("Reporte descargado con éxito.", 'success');
         
     } catch (e) {
         console.error("Error al descargar reporte individual:", e);
-        alert("Ocurrió un error al descargar el archivo.");
+        showToast("Ocurrió un error al descargar el archivo.", 'error');
     } finally {
         btnDownloadExcel.disabled = false;
         btnDownloadPdf.disabled = false;
@@ -721,6 +851,7 @@ async function triggerConsolidatedDownload() {
     
     const btnText = btnDownloadConsolidatedInline.innerHTML;
     btnDownloadConsolidatedInline.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Generando PDF Consolidado...';
+    showToast("Generando reporte multipágina consolidado... Esto puede tomar unos segundos.", 'info');
     
     try {
         const response = await fetch('/api/download/consolidated-pdf', {
@@ -731,7 +862,7 @@ async function triggerConsolidatedDownload() {
         
         if (!response.ok) {
             const err = await response.json();
-            alert(`Error al generar el reporte consolidado: ${err.error}`);
+            showToast(`Error al consolidar: ${err.error}`, 'error');
             return;
         }
         
@@ -746,10 +877,11 @@ async function triggerConsolidatedDownload() {
         
         document.body.removeChild(a);
         window.URL.revokeObjectURL(blobUrl);
+        showToast("Reporte consolidado descargado exitosamente.", 'success');
         
     } catch (e) {
         console.error("Error al descargar PDF consolidado:", e);
-        alert("Ocurrió un error al generar y descargar el reporte consolidado.");
+        showToast("Ocurrió un error al generar el consolidado.", 'error');
     } finally {
         btnDownloadConsolidated.disabled = false;
         btnDownloadConsolidatedInline.disabled = false;

@@ -5,3 +5,4 @@ seaborn
 xlsxwriter
 flask
 fpdf2
+gunicorn

@@ -178,6 +178,7 @@
                                 <p>Selecciona un Año, Mes y Mina en el panel izquierdo para visualizar el gráfico estadístico.</p>
                             </div>
                             <img id="chart-img" class="chart-image" src="" alt="Gráfico de consumos" style="display: none;">
+                            <div id="chart-skeleton" class="skeleton skeleton-chart" style="display: none;"></div>
                         </div>
                     </section>
                     
@@ -219,14 +220,21 @@
                             <i class="fa-solid fa-folder-open placeholder-icon"></i>
                             <p>No se han filtrado registros para mostrar.</p>
                         </div>
+                        <div id="table-skeleton" style="display: none; padding: 10px 0;">
+                            <div class="skeleton skeleton-row"></div>
+                            <div class="skeleton skeleton-row"></div>
+                            <div class="skeleton skeleton-row"></div>
+                            <div class="skeleton skeleton-row"></div>
+                            <div class="skeleton skeleton-row"></div>
+                        </div>
                         <div class="table-responsive" id="table-container" style="display: none;">
                             <table class="data-table" id="data-table">
                                 <thead>
                                     <tr>
-                                        <th>Fecha</th>
-                                        <th>POOT</th>
+                                        <th class="text-center">Fecha</th>
+                                        <th class="text-center">POOT</th>
                                         <th>Descripción del Producto</th>
-                                        <th>Unidad</th>
+                                        <th class="text-center">Unidad</th>
                                         <th class="text-center">Cant.</th>
                                         <th class="text-right">Precio Unit.</th>
                                         <th class="text-right">Total</th>
@@ -238,6 +246,18 @@
                                     <!-- Dinámico -->
                                 </tbody>
                             </table>
+                            <!-- Panel de Paginación -->
+                            <div class="pagination-container" id="pagination-container" style="display: none;">
+                                <span class="pagination-info" id="pagination-info">Mostrando 1-20 de 120 registros</span>
+                                <div class="pagination-buttons">
+                                    <button class="pagination-btn" id="btn-page-prev" disabled>
+                                        <i class="fa-solid fa-chevron-left"></i> Anterior
+                                    </button>
+                                    <button class="pagination-btn" id="btn-page-next" disabled>
+                                        Siguiente <i class="fa-solid fa-chevron-right"></i>
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </section>
@@ -319,6 +339,9 @@
         </main>
         
     </div>
+    
+    <!-- Contenedor para Notificaciones Flotantes (Toasts) -->
+    <div class="toast-container" id="toast-container"></div>
     
     <!-- Script de interactividad JS Vanilla -->
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
