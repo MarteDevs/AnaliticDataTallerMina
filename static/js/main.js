@@ -7,8 +7,9 @@ let currentTab = 'individual'; // individual | consolidated
 let currentPage = 1;
 const recordsPerPage = 20;
 
-// Caché de consolidado en cliente
+// Caché de consolidado en cliente e interruptores de aborto
 const consolidatedCache = {};
+let consolidatedAbortController = null;
 
 // Elementos de la interfaz - Barra lateral
 const uploadZone = document.getElementById('upload-zone');
@@ -529,6 +530,13 @@ async function updateConsolidatedSummary() {
         return;
     }
     
+    // Cancelar peticiones previas en curso para evitar colisiones
+    if (consolidatedAbortController) {
+        consolidatedAbortController.abort();
+    }
+    consolidatedAbortController = new AbortController();
+    const { signal } = consolidatedAbortController;
+    
     try {
         consolidatedTablePlaceholder.style.display = "none";
         consolidatedTableContainer.style.display = "block";
@@ -537,7 +545,8 @@ async function updateConsolidatedSummary() {
         const response = await fetch('/api/consolidated/summary', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ year, month, minas: selectedMinas })
+            body: JSON.stringify({ year, month, minas: selectedMinas }),
+            signal
         });
         
         const data = await response.json();
@@ -555,8 +564,20 @@ async function updateConsolidatedSummary() {
         renderConsolidatedSummary(data);
         
     } catch (e) {
+        if (e.name === 'AbortError') {
+            return; // Silenciar si la petición fue abortada por otro clic
+        }
         console.error("Error cargando resumen consolidado:", e);
         consolidatedTableTbody.innerHTML = '<tr><td colspan="4" class="text-center text-danger">Ocurrió un error al calcular los montos.</td></tr>';
+        
+        // Resetear totales del pie de página al ocurrir un fallo
+        consolidatedTotalTrans.innerText = "0";
+        consolidatedTotalSinIgv.innerText = "S/ 0.00";
+        consolidatedTotalConIgv.innerText = "S/ 0.00";
+        
+        // Desactivar botones de descarga inconsistentes
+        btnDownloadConsolidated.disabled = true;
+        btnDownloadConsolidatedInline.disabled = true;
     }
 }
 
@@ -846,8 +867,12 @@ async function triggerConsolidatedDownload() {
     
     if (!year || !month || selectedMinas.length === 0) return;
     
+    // Deshabilitar botones y checkboxes para evitar peticiones cruzadas
     btnDownloadConsolidated.disabled = true;
     btnDownloadConsolidatedInline.disabled = true;
+    
+    const checkboxes = minasCheckboxGrid.querySelectorAll('input[type="checkbox"]');
+    checkboxes.forEach(chk => chk.disabled = true);
     
     const btnText = btnDownloadConsolidatedInline.innerHTML;
     btnDownloadConsolidatedInline.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Generando PDF Consolidado...';
@@ -886,5 +911,9 @@ async function triggerConsolidatedDownload() {
         btnDownloadConsolidated.disabled = false;
         btnDownloadConsolidatedInline.disabled = false;
         btnDownloadConsolidatedInline.innerHTML = btnText;
+        
+        // Volver a habilitar todos los checkboxes
+        const checkboxes = minasCheckboxGrid.querySelectorAll('input[type="checkbox"]');
+        checkboxes.forEach(chk => chk.disabled = false);
     }
 }
